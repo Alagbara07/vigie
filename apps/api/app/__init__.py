@@ -1,0 +1,1 @@
+"""VIGIE API application."""

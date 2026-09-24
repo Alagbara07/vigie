@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vigie}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vigie}
+      POSTGRES_DB: ${POSTGRES_DB:-vigie}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - vigie_postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  vigie_postgres_data:

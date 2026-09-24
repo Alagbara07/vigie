@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: vigie-api
+Version: 0.1.0
+Summary: VIGIE API
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115.6
+Requires-Dist: uvicorn[standard]>=0.34.0
+Requires-Dist: pydantic-settings>=2.7.0
+Requires-Dist: sqlalchemy>=2.0.36
+Requires-Dist: psycopg[binary]>=3.2.3
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.4; extra == "dev"
+Requires-Dist: httpx>=0.28.1; extra == "dev"
