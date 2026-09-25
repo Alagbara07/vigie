@@ -160,7 +160,7 @@ function SignalRow({
     <li className={`border-b border-[var(--line)] border-l-2 py-5 pl-4 ${toneClass(tone.tone)}`}>
       <p className={`text-[11px] font-semibold tracking-[0.14em] uppercase ${toneText(tone.tone)}`}>{tone.label}</p>
       <h3 className="mt-1 text-lg font-semibold">{signal.title}</h3>
-      <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">{signal.description}</p>
+      <p className="mt-2 max-w-xl text-sm leading-6 break-words text-[var(--muted)]">{signal.description}</p>
       {signal.financial_impact_amount && signal.currency ? (
         <p className="mt-3 text-sm">
           <span className="text-[var(--muted)]">Revenue at risk </span>

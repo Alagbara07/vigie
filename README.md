@@ -2,27 +2,77 @@
 
 L'intelligence qui veille sur votre entreprise.
 
-VIGIE is an AI-powered business radar for WhatsApp-first small and medium businesses. It turns unstructured business conversations into events, signals, and recommended actions that a person approves before anything is executed.
+## What is VIGIE?
 
-Your business is talking all day. VIGIE tells you what matters.
+VIGIE is an AI business radar for WhatsApp-first small businesses. It turns conversations into commitments, notices when those commitments are missed, and recommends the next step. A person approves that step. VIGIE does not send the message.
+
+## Problem
+
+A business receives messages all day. Payment promises, price questions, and ordinary greetings arrive in the same thread. The important ones get buried, and a missed payment is often noticed too late.
+
+## Solution
+
+VIGIE interprets each message into structured business state, evaluates that state over time, surfaces the few signals that matter, and recommends an action. The owner reviews the evidence and decides. Approval records the decision. It does not contact the customer.
 
 ## Architecture
+
+```text
+Messages
+   ↓
+AI Provider
+   ↓
+Structured Proposal
+   ↓
+Validation
+   ↓
+Domain Engine
+   ↓
+Events / Commitments
+   ↓
+Evaluation
+   ↓
+Signals
+   ↓
+Actions
+   ↓
+Human Approval
+```
+
+The browser talks only to Next.js. Next.js rewrites `/api/*` to FastAPI. FastAPI is the only process that connects to PostgreSQL.
 
 ```text
 Next.js  →  FastAPI  →  PostgreSQL
 ```
 
-The browser talks only to Next.js. Requests to `/api/*` are rewritten by the Next.js server to FastAPI. FastAPI is the only process that connects to PostgreSQL.
+There is no queue, worker, or vector database. That is deliberate. The domain model can later sit behind a queue without changing what an event, commitment, signal, or action means.
 
-The domain tables for businesses, conversations, events, commitments, signals, and actions are in PostgreSQL. A message is analyzed like this:
+## AI architecture
 
-```text
-Message → Provider → Proposal → Validation → Domain logic
-```
+Two providers implement the same interface:
 
-The provider may be the local heuristic or NVIDIA. Both return the same proposal. Validation and the domain engine decide what is stored. The model does not verify payments, open signals, or send messages. `POST /api/evaluations/run` turns persisted commitments and request events into signals. `POST /api/actions/recommend` turns an open signal into one recommendation. Approving or rejecting that recommendation records the decision and does not send a message. The Command Center at `/` reads `GET /api/dashboard/summary` and the signal APIs. `GET /api/system/ai-provider` reports which provider is selected, without credentials.
+* `heuristic` is deterministic and needs no credentials. It is the local default.
+* `nvidia` calls a NVIDIA chat endpoint configured by environment variables.
 
-## Local development
+Both return a `MessageAnalysisProposal`. Pydantic rejects a malformed proposal. The domain engine then decides what may be stored. A payment claim is never a verified payment. A promise stays pending until evaluation, using the business timezone, marks it missed. The model does not open signals, create actions, or send messages. If NVIDIA is selected and the call fails, VIGIE reports the failure. It does not silently switch to the heuristic.
+
+`GET /api/system/ai-provider` reports the selected provider and whether it is configured. It does not return credentials.
+
+## Demo
+
+The local story is Adaeze Wears, timezone `Africa/Lagos`.
+
+| Customer | Message | Result |
+| --- | --- | --- |
+| Amaka Bello | I'll pay the remaining ₦150,000 on Friday. | Payment commitment. Pending until the due day has passed, then missed. |
+| Ngozi Eze | How much is the wholesale price for 100 units? | Unanswered request. A signal opens after the reply threshold. |
+| Chinedu Okafor | I sent the ₦150,000 balance yesterday. Please confirm. | Payment claim. `payment_verified` stays false. |
+| Tunde Adeyemi | Good morning. | No event, commitment, or signal. |
+
+With `VIGIE_DEMO_MODE=true`, `POST /api/demo/run` resets that inbox and replays the story. Analysis uses `2026-09-24T09:00:00+01:00`. Evaluation then uses `2026-09-26T09:00:00+01:00`. Those are reference times, not the machine clock. The follow-up action is left `PROPOSED` so a person can approve it in the Command Center. When demo mode is off, the reset and run routes respond `404`.
+
+Open the Command Center at [http://localhost:3000](http://localhost:3000).
+
+## Running locally
 
 Copy the environment file once:
 
@@ -42,7 +92,8 @@ Create the API environment and start FastAPI from `apps/api`:
 cd apps/api
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
-.\.venv\Scripts\uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Start Next.js from `apps/web`:
@@ -53,48 +104,55 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The page reads system status from `/api/health` on the Next.js origin. Next.js forwards that request to FastAPI.
-
-Apply migrations and load the demo inbox from `apps/api`:
+The seeded inbox can also be loaded without the demo route:
 
 ```powershell
-.\.venv\Scripts\alembic upgrade head
+cd apps/api
 .\.venv\Scripts\python -m app.seed
 ```
 
-Run the API tests from `apps/api` while PostgreSQL is running. Pytest applies the same migrations to `vigie_test`.
+## Tests
+
+From `apps/api`, with PostgreSQL running:
 
 ```powershell
 .\.venv\Scripts\python -m pytest
 ```
 
-Build the frontend from `apps/web`:
+From `apps/web`:
 
 ```powershell
+npm test
+npm run lint
 npm run build
 ```
 
+Backend tests use `TEST_DATABASE_URL` and the `vigie_test` database. They do not call NVIDIA. SQLite is not used.
+
+`GET /api/health` returns `200` when the API and PostgreSQL are both reachable. If PostgreSQL is down, the same route returns `503` with `"database": "unavailable"`.
+
 ## Environment variables
 
-Configuration lives in `.env` at the repository root. `.env.example` lists every variable. Do not commit `.env`.
+Configuration lives in `.env` at the repository root. `.env` is gitignored. `.env.example` lists every variable and contains no real credentials.
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `POSTGRES_USER` | Docker Compose | Database role. Development default: `vigie`. |
 | `POSTGRES_PASSWORD` | Docker Compose | Database password. Development default: `vigie`. |
 | `POSTGRES_DB` | Docker Compose | Development database name. Default: `vigie`. |
-| `POSTGRES_PORT` | Docker Compose | Host port published for PostgreSQL. Default: `5433`, so a local PostgreSQL on `5432` does not intercept connections. |
+| `POSTGRES_PORT` | Docker Compose | Host port. Default `5433`, so a local PostgreSQL on `5432` is left alone. |
 | `DATABASE_URL` | FastAPI | SQLAlchemy URL. Use `localhost` when the API runs on the host. |
-| `DATABASE_CONNECT_TIMEOUT_SECONDS` | FastAPI | How long a database connection attempt may wait. Default: `3`. |
+| `DATABASE_CONNECT_TIMEOUT_SECONDS` | FastAPI | Database connection timeout. Default: `3`. |
 | `TEST_DATABASE_URL` | pytest | PostgreSQL URL for tests. Default database: `vigie_test`. |
 | `API_HOST` | FastAPI | Bind address. Default: `0.0.0.0`. |
 | `API_PORT` | FastAPI | API port. Default: `8000`. |
-| `AI_PROVIDER` | FastAPI | `heuristic` or `nvidia`. An unknown value is rejected. NVIDIA does not fall back to the heuristic. |
-| `NVIDIA_API_KEY` | FastAPI | Required only when `AI_PROVIDER=nvidia`. Never commit this value. |
-| `NVIDIA_MODEL` | FastAPI | Model name expected by the NVIDIA environment. Required for NVIDIA mode. |
-| `NVIDIA_BASE_URL` | FastAPI | API root for that environment, usually ending in `/v1`. Required for NVIDIA mode. |
-| `NVIDIA_TIMEOUT_SECONDS` | FastAPI | HTTP timeout for one NVIDIA request. Default: `30`. |
-| `UNANSWERED_REQUEST_THRESHOLD_MINUTES` | FastAPI | How long a stored request can wait without a business reply before evaluation opens a signal. Default: `60`. |
+| `AI_PROVIDER` | FastAPI | `heuristic` or `nvidia`. Unknown values are rejected. |
+| `NVIDIA_API_KEY` | FastAPI | Required only for NVIDIA mode. Never commit it. |
+| `NVIDIA_MODEL` | FastAPI | Model name for the NVIDIA environment in use. |
+| `NVIDIA_BASE_URL` | FastAPI | API root for that environment, usually ending in `/v1`. |
+| `NVIDIA_TIMEOUT_SECONDS` | FastAPI | Timeout for one NVIDIA request. Default: `30`. |
+| `VIGIE_DEMO_MODE` | FastAPI | `true` enables demo reset and run. Keep `false` outside a local demo. |
+| `UNANSWERED_REQUEST_THRESHOLD_MINUTES` | FastAPI | How long a request can wait before a signal. Default: `60`. |
 | `API_INTERNAL_URL` | Next.js server | Rewrite target for `/api/*`. The browser does not use this value. |
 | `WEB_PORT` | Next.js | Documented frontend port. Default: `3000`. |
 
@@ -104,7 +162,7 @@ Configuration lives in `.env` at the repository root. `.env.example` lists every
 AI_PROVIDER=heuristic
 ```
 
-No NVIDIA credentials are required. This is the default. The heuristic provider is deterministic and stays available when NVIDIA is not selected.
+No NVIDIA credentials are required.
 
 ### NVIDIA mode
 
@@ -115,11 +173,9 @@ NVIDIA_MODEL=...
 NVIDIA_BASE_URL=...
 ```
 
-`NVIDIA_MODEL` and `NVIDIA_BASE_URL` must match the NVIDIA environment you are using. `NVIDIA_BASE_URL` is the API root, usually ending in `/v1`. VIGIE sends a chat completion there and validates the JSON before anything is stored. If NVIDIA is selected and a request fails, VIGIE reports that failure. It does not silently switch to the heuristic.
+`NVIDIA_MODEL` and `NVIDIA_BASE_URL` must match the NVIDIA environment you are using. A failed NVIDIA call stays a failed NVIDIA call.
 
-`apps/web` loads the root `.env` when Next.js starts, so `API_INTERNAL_URL` does not need a second file.
-
-The development password is a local default. It is not a production secret.
+The development database password is a local default. It is not a production secret.
 
 ## Services and ports
 
@@ -128,22 +184,3 @@ The development password is a local default. It is not a production secret.
 | PostgreSQL 16 | Docker | `5433` on the host, `5432` inside the container |
 | FastAPI | Host | `8000` |
 | Next.js | Host | `3000` |
-
-PostgreSQL is on a Compose network and its port is published to the host so FastAPI can connect with `localhost`. A future API container would use the hostname `postgres` instead.
-
-## Tests
-
-Backend tests run against PostgreSQL. They use `TEST_DATABASE_URL`, which points at `vigie_test`. That database is created the first time the Docker volume is initialized. SQLite is not used.
-
-`GET /api/health` returns `200` when the API and PostgreSQL are both reachable:
-
-```json
-{
-  "status": "ok",
-  "service": "vigie-api",
-  "api": "ok",
-  "database": "ok"
-}
-```
-
-If PostgreSQL is down, the same route returns `503` with `"database": "unavailable"`. The API process is still up. If the Next.js page cannot reach FastAPI at all, the page shows that the API is unavailable.

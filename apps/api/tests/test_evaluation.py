@@ -41,6 +41,22 @@ def test_date_commitment_stays_pending_through_the_due_day() -> None:
     assert is_past_due(DUE_START, DuePrecision.DATE.value, AFTER_DUE, "Africa/Lagos") is True
 
 
+def test_lagos_midnight_is_not_judged_as_a_utc_date() -> None:
+    due = datetime(2026, 9, 25, 0, 0, tzinfo=LAGOS)
+    before_midnight = datetime(2026, 9, 24, 23, 59, 59, tzinfo=LAGOS)
+    due_midnight = datetime(2026, 9, 25, 0, 0, 0, tzinfo=LAGOS)
+    due_day_utc_previous = datetime(2026, 9, 25, 0, 30, tzinfo=LAGOS)
+    end_of_due_day = datetime(2026, 9, 25, 23, 59, 59, tzinfo=LAGOS)
+    next_midnight = datetime(2026, 9, 26, 0, 0, 0, tzinfo=LAGOS)
+
+    assert due_day_utc_previous.astimezone(timezone.utc).date().isoformat() == "2026-09-24"
+    assert is_past_due(due, DuePrecision.DATE.value, before_midnight, "Africa/Lagos") is False
+    assert is_past_due(due, DuePrecision.DATE.value, due_midnight, "Africa/Lagos") is False
+    assert is_past_due(due, DuePrecision.DATE.value, due_day_utc_previous, "Africa/Lagos") is False
+    assert is_past_due(due, DuePrecision.DATE.value, end_of_due_day, "Africa/Lagos") is False
+    assert is_past_due(due, DuePrecision.DATE.value, next_midnight, "Africa/Lagos") is True
+
+
 def test_exact_commitment_is_missed_only_after_the_instant() -> None:
     due = datetime(2026, 9, 25, 15, 0, tzinfo=LAGOS)
     assert is_past_due(due, DuePrecision.EXACT.value, due, "Africa/Lagos") is False

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.api.actions import router as actions_router
 from app.api.analysis import router as analysis_router
 from app.api.dashboard import router as dashboard_router
+from app.api.demo import router as demo_router
 from app.api.evaluations import router as evaluations_router
 from app.api.health import router as health_router
 from app.api.inbox import router as inbox_router
@@ -38,3 +39,4 @@ app.include_router(evaluations_router)
 app.include_router(signals_router)
 app.include_router(actions_router)
 app.include_router(dashboard_router)
+app.include_router(demo_router)

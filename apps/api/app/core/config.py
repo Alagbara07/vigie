@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     app_env: str = "development"
+    vigie_demo_mode: bool = False
     ai_provider: str = "heuristic"
     unanswered_request_threshold_minutes: int = 60
     nvidia_api_key: str = ""

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { DemoControlsLoader } from "@/components/demo-controls";
 import { ProviderStatusLoader } from "@/components/provider-status";
 
 const NAV = [
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </nav>
           <ProviderStatusLoader />
+          <DemoControlsLoader />
         </header>
         <div className="min-w-0 px-5 py-6 md:px-10 md:py-8">{children}</div>
       </div>

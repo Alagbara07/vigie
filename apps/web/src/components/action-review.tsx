@@ -64,7 +64,7 @@ export function ActionReview({
         <h2 className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Proposed action</h2>
         <p className="mt-3 text-base font-medium">{action.title ?? "Review the recommendation"}</p>
         <h3 className="mt-5 text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Draft</h3>
-        <p className="mt-3 max-w-xl text-sm leading-6 whitespace-pre-wrap">
+        <p className="mt-3 max-w-xl text-sm leading-6 break-words whitespace-pre-wrap">
           {action.proposed_content ?? "No customer message has been drafted. Review the signal and reply yourself."}
         </p>
       </section>
