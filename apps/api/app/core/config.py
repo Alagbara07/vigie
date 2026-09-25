@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     app_env: str = "development"
+    ai_provider: str = "heuristic"
+    unanswered_request_threshold_minutes: int = 60
+    nvidia_api_key: str = ""
+    nvidia_model: str = ""
+    nvidia_base_url: str = ""
+    nvidia_timeout_seconds: float = 30
 
 
 @lru_cache

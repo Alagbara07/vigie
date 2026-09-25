@@ -1,0 +1,18 @@
+class DomainError(Exception):
+    """Base class for expected domain failures."""
+
+
+class NotFoundError(DomainError):
+    """The requested record does not exist in this business."""
+
+
+class ConflictError(DomainError):
+    """The write conflicts with an existing record."""
+
+
+class InvalidProposalError(DomainError):
+    """Structured AI output failed validation and was not persisted."""
+
+
+class AIProviderError(DomainError):
+    """The configured AI provider cannot analyze a message."""

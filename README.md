@@ -14,7 +14,13 @@ Next.js  →  FastAPI  →  PostgreSQL
 
 The browser talks only to Next.js. Requests to `/api/*` are rewritten by the Next.js server to FastAPI. FastAPI is the only process that connects to PostgreSQL.
 
-Stage 1 is the development foundation: a health check, database connectivity, and a status page. Business events, signals, and the AI provider are not implemented yet.
+The domain tables for businesses, conversations, events, commitments, signals, and actions are in PostgreSQL. A message is analyzed like this:
+
+```text
+Message → Provider → Proposal → Validation → Domain logic
+```
+
+The provider may be the local heuristic or NVIDIA. Both return the same proposal. Validation and the domain engine decide what is stored. The model does not verify payments, open signals, or send messages. `POST /api/evaluations/run` turns persisted commitments and request events into signals. `POST /api/actions/recommend` turns an open signal into one recommendation. Approving or rejecting that recommendation records the decision and does not send a message. The Command Center at `/` reads `GET /api/dashboard/summary` and the signal APIs. `GET /api/system/ai-provider` reports which provider is selected, without credentials.
 
 ## Local development
 
@@ -49,7 +55,14 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). The page reads system status from `/api/health` on the Next.js origin. Next.js forwards that request to FastAPI.
 
-Run the API tests from `apps/api` while PostgreSQL is running:
+Apply migrations and load the demo inbox from `apps/api`:
+
+```powershell
+.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\python -m app.seed
+```
+
+Run the API tests from `apps/api` while PostgreSQL is running. Pytest applies the same migrations to `vigie_test`.
 
 ```powershell
 .\.venv\Scripts\python -m pytest
@@ -76,8 +89,33 @@ Configuration lives in `.env` at the repository root. `.env.example` lists every
 | `TEST_DATABASE_URL` | pytest | PostgreSQL URL for tests. Default database: `vigie_test`. |
 | `API_HOST` | FastAPI | Bind address. Default: `0.0.0.0`. |
 | `API_PORT` | FastAPI | API port. Default: `8000`. |
+| `AI_PROVIDER` | FastAPI | `heuristic` or `nvidia`. An unknown value is rejected. NVIDIA does not fall back to the heuristic. |
+| `NVIDIA_API_KEY` | FastAPI | Required only when `AI_PROVIDER=nvidia`. Never commit this value. |
+| `NVIDIA_MODEL` | FastAPI | Model name expected by the NVIDIA environment. Required for NVIDIA mode. |
+| `NVIDIA_BASE_URL` | FastAPI | API root for that environment, usually ending in `/v1`. Required for NVIDIA mode. |
+| `NVIDIA_TIMEOUT_SECONDS` | FastAPI | HTTP timeout for one NVIDIA request. Default: `30`. |
+| `UNANSWERED_REQUEST_THRESHOLD_MINUTES` | FastAPI | How long a stored request can wait without a business reply before evaluation opens a signal. Default: `60`. |
 | `API_INTERNAL_URL` | Next.js server | Rewrite target for `/api/*`. The browser does not use this value. |
 | `WEB_PORT` | Next.js | Documented frontend port. Default: `3000`. |
+
+### Local heuristic mode
+
+```text
+AI_PROVIDER=heuristic
+```
+
+No NVIDIA credentials are required. This is the default. The heuristic provider is deterministic and stays available when NVIDIA is not selected.
+
+### NVIDIA mode
+
+```text
+AI_PROVIDER=nvidia
+NVIDIA_API_KEY=...
+NVIDIA_MODEL=...
+NVIDIA_BASE_URL=...
+```
+
+`NVIDIA_MODEL` and `NVIDIA_BASE_URL` must match the NVIDIA environment you are using. `NVIDIA_BASE_URL` is the API root, usually ending in `/v1`. VIGIE sends a chat completion there and validates the JSON before anything is stored. If NVIDIA is selected and a request fails, VIGIE reports that failure. It does not silently switch to the heuristic.
 
 `apps/web` loads the root `.env` when Next.js starts, so `API_INTERNAL_URL` does not need a second file.
 

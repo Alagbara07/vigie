@@ -8,6 +8,7 @@ Requires-Dist: uvicorn[standard]>=0.34.0
 Requires-Dist: pydantic-settings>=2.7.0
 Requires-Dist: sqlalchemy>=2.0.36
 Requires-Dist: psycopg[binary]>=3.2.3
+Requires-Dist: alembic>=1.14.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3.4; extra == "dev"
 Requires-Dist: httpx>=0.28.1; extra == "dev"
