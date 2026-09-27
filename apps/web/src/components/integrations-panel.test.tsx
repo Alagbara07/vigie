@@ -66,6 +66,61 @@ describe("integrations", () => {
     expect(onDisconnect).toHaveBeenCalledWith("whatsapp");
   });
 
+  it("explains Gmail OAuth without claiming a mailbox is connected", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={gmail({ availability: "available", configured: true })}
+        onSend={async () => result}
+      />,
+    );
+
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText(/Connect Google starts OAuth/)).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+    expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
+  });
+
+  it("says the Gmail watch is not active when listening has stopped", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={gmail({
+          availability: "connected",
+          configured: true,
+          accountLabel: "ada@example.com",
+          listening: false,
+          realtime: "needs_attention",
+        })}
+        onSend={async () => result}
+      />,
+    );
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("Account ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("The Gmail watch is not active.")).toBeInTheDocument();
+    expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
+  });
+
+  it("explains the Meta setup and does not call an unconnected number connected", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={whatsapp({
+          availability: "available",
+          configured: true,
+          webhookUrl: "https://vigie-api.example/api/integrations/whatsapp/webhook",
+        })}
+        onSend={async () => result}
+      />,
+    );
+
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText(/does not send a reply/i)).toBeInTheDocument();
+    expect(screen.getByText("https://vigie-api.example/api/integrations/whatsapp/webhook")).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+  });
+
   it("shows a provider error without claiming the channel is connected", () => {
     render(
       <IntegrationsPanel

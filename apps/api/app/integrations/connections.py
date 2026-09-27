@@ -73,6 +73,7 @@ def list_channels(session: Session, business_id: uuid.UUID, settings: Settings |
                 "last_sync_at": None if row is None else row.last_sync_at,
                 "last_error": last_error,
                 "configured": _configured(provider, active),
+                "webhook_url": _webhook_url(provider, active),
                 **realtime,
             }
         )
@@ -294,6 +295,13 @@ def _require_connection(
     if row is None:
         raise NotFoundError("This channel is not connected.")
     return row
+
+
+def _webhook_url(provider: IntegrationProvider, settings: Settings) -> str | None:
+    if provider is not IntegrationProvider.WHATSAPP:
+        return None
+    url = settings.whatsapp_webhook_url()
+    return url or None
 
 
 def _configured(provider: IntegrationProvider, settings: Settings) -> bool:

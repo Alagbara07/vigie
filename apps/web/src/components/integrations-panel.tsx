@@ -267,6 +267,8 @@ export function IntegrationsPanel({
               <p className="text-[11px] font-semibold tracking-[0.14em] uppercase">{STATUS_LABEL[channel.availability]}</p>
             </div>
             <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
+            <WhatsAppSetup channel={channel} />
+            <GmailSetup channel={channel} />
             {channel.accountLabel ? <p className="mt-3 text-sm">Account {channel.accountLabel}</p> : null}
             <GmailRealtimeStatus channel={channel} />
             <p className="mt-2 text-sm text-[var(--muted)]">
@@ -425,6 +427,56 @@ export function IntegrationsPanel({
   );
 }
 
+function WhatsAppSetup({ channel }: { channel: ChannelStatus }) {
+  if (channel.provider !== "whatsapp") {
+    return null;
+  }
+  if (!channel.configured) {
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        Meta credentials are not set on the API. WhatsApp stays not configured until the app secret, verify token, and
+        access token exist. That does not connect a number.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 text-sm leading-6 text-[var(--muted)]">
+      <p>
+        In the Meta app, set the callback to the webhook and subscribe to messages. Then enter the phone number ID from
+        that WhatsApp Business account. VIGIE only receives messages. It does not send a reply.
+      </p>
+      {channel.webhookUrl ? (
+        <p className="mt-2 break-all font-medium text-[var(--ink)]">{channel.webhookUrl}</p>
+      ) : (
+        <p className="mt-2">The public API origin is not set, so the callback URL cannot be shown yet.</p>
+      )}
+    </div>
+  );
+}
+
+function GmailSetup({ channel }: { channel: ChannelStatus }) {
+  if (channel.provider !== "gmail") {
+    return null;
+  }
+  if (!channel.configured) {
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        Google OAuth is not configured on the API. Gmail stays not configured until a client id, client secret, and
+        redirect URI exist.
+      </p>
+    );
+  }
+  if (channel.availability === "connected") {
+    return null;
+  }
+  return (
+    <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+      Connect Google starts OAuth. Google returns the mailbox to the API. VIGIE stores that mailbox for this business
+      and does not send email.
+    </p>
+  );
+}
+
 function GmailRealtimeStatus({ channel }: { channel: ChannelStatus }) {
   if (channel.provider !== "gmail" || channel.availability !== "connected") {
     return null;
@@ -434,7 +486,12 @@ function GmailRealtimeStatus({ channel }: { channel: ChannelStatus }) {
       {channel.listening ? <p>Listening for new messages</p> : null}
       {channel.realtime === "manual" ? <p>Manual sync available</p> : null}
       {channel.realtime === "manual" && !channel.pubsubConfigured ? <p>Real-time listening: Not configured</p> : null}
-      {channel.realtime === "needs_attention" ? <p>Needs attention</p> : null}
+      {channel.realtime === "needs_attention" ? (
+        <>
+          <p>Needs attention</p>
+          <p>The Gmail watch is not active.</p>
+        </>
+      ) : null}
       {channel.lastNotificationAt ? (
         <p className="text-[var(--muted)]">Last received: {relativeTime(channel.lastNotificationAt, new Date())}</p>
       ) : null}

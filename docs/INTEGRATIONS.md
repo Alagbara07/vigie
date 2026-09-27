@@ -63,8 +63,10 @@ META_PHONE_NUMBER_ID
 Callback and webhook URL:
 
 ```text
-https://<your-api>/api/integrations/whatsapp/webhook
+{API_PUBLIC_URL}/api/integrations/whatsapp/webhook
 ```
+
+The integrations page shows that URL when `API_PUBLIC_URL` is set. It does not show the app secret, verify token, or access token. Register the callback in Meta and subscribe to messages there. VIGIE does not do that step. A phone number shows Connected only after this business saves that phone number ID. Incoming text is then routed by that ID. Approval still does not send a WhatsApp message.
 
 Meta's verification request is `GET` with `hub.mode`, `hub.verify_token`, and `hub.challenge`. VIGIE returns the challenge only when the verify token matches. `POST` deliveries must carry `X-Hub-Signature-256` computed with the app secret. A bad signature is rejected. An unknown phone number is ignored. A repeated Meta message ID returns the stored message and does not analyze it again.
 
@@ -81,8 +83,10 @@ GOOGLE_REDIRECT_URI
 Redirect URI:
 
 ```text
-https://<your-api>/api/integrations/gmail/callback
+{API_PUBLIC_URL}/api/integrations/gmail/callback
 ```
+
+Leave `GOOGLE_REDIRECT_URI` empty and set `API_PUBLIC_URL` to the public API origin. The API then uses that redirect. Set `GOOGLE_REDIRECT_URI` only when the callback must differ from that derived URL. Production rejects an HTTP or localhost redirect.
 
 The requested scope is `https://www.googleapis.com/auth/gmail.readonly`. The browser is sent to Google. The callback reads `state` from the server-side record and does not trust a `business_id` on the callback. Tokens stay on the server. `POST /api/integrations/gmail/sync` reads recent messages through the Gmail API.
 
@@ -93,16 +97,22 @@ OAuth and Pub/Sub are separate. The API starts, the demo runs, and Gmail shows "
 This repository has not been tested against a live Google Cloud project.
 
 1. Create a Google Cloud project and enable the Gmail API.
-2. Create an OAuth client. Set the redirect URI to `https://<your-api>/api/integrations/gmail/callback`. The scope is `https://www.googleapis.com/auth/gmail.readonly`.
-3. Put `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in the API environment. Do not commit them.
+2. Create an OAuth client. The redirect URI is `{API_PUBLIC_URL}/api/integrations/gmail/callback` unless `GOOGLE_REDIRECT_URI` is set. The scope is `https://www.googleapis.com/auth/gmail.readonly`.
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the API environment. Leave `GOOGLE_REDIRECT_URI` empty to use `API_PUBLIC_URL`. Do not commit them.
 4. Create a Pub/Sub topic, for example `projects/PROJECT_ID/topics/vigie-gmail`. Grant `gmail-api-push@system.gserviceaccount.com` the Pub/Sub Publisher role on that topic. Gmail's watch call publishes there.
-5. Create a push subscription on that topic. The push endpoint is `https://<your-api>/api/integrations/gmail/pubsub`. Enable authentication and set the audience to that same URL. Note the push service account email.
+5. Create a push subscription on that topic. The push endpoint is `{API_PUBLIC_URL}/api/integrations/gmail/pubsub`. Enable authentication and set the audience to that same URL. Note the push service account email.
 6. Set `GMAIL_PUBSUB_TOPIC`, `GMAIL_PUBSUB_AUDIENCE`, and `GMAIL_PUBSUB_SERVICE_ACCOUNT`. The audience is the push URL. The service account is the identity Google puts on the push token.
 7. After a business connects Gmail, VIGIE reads the current history id, syncs recent mail, calls `users.watch`, then reads history since that baseline so mail that arrives during registration is not skipped. The watch response's expiration is stored as Google returns it.
 8. `POST /api/integrations/gmail/pubsub` accepts the push. It verifies the Google OIDC bearer token, checks that the subscription belongs to the same project as the topic, and only then reads `emailAddress` and `historyId`. The notification is not the email. VIGIE calls `history.list` and fetches the changed messages. An unknown mailbox is acknowledged and ignored. A repeated delivery does not create another message, event, commitment, or signal.
 9. The endpoint requires HTTPS in production. Google will not push to a laptop address. Locally, use Connect and Sync now. Real-time listening stays "Not configured" until the three Pub/Sub variables are set.
-10. Watches expire. Renew them before the stored expiration. Run `python -m app.jobs.renew_gmail_watches` once a day from the host scheduler. The command uses the expiration Google returned and `GMAIL_WATCH_RENEW_WITHIN_HOURS` (default 24). It does not assume a fixed watch lifetime. No queue or cache is required.
+10. Watches expire. Renew them before the stored expiration. Run `python -m app.jobs.renew_gmail_watches` once a day from the host scheduler. The command uses the expiration Google returned and `GMAIL_WATCH_RENEW_WITHIN_HOURS` (default 24). One mailbox that fails is recorded and the next mailbox still renews. No queue or cache is required. Disconnecting Gmail clears the mailbox id and the stored tokens, so a later notification is ignored.
 11. If Gmail says the stored history id is gone, VIGIE syncs recent messages and stores a new history baseline. A failed watch leaves the mailbox connected, records the error, and can be retried with Enable real-time listening.
+
+VIGIE does this automatically after the environment is set: start OAuth, bind and consume `state`, encrypt the tokens, store the mailbox on that business, register the watch, verify Pub/Sub, ignore unknown mailboxes and repeats, and renew watches from the daily command.
+
+You configure Google Cloud: Gmail API, the OAuth client and consent screen, the redirect above, the Pub/Sub topic and the `gmail-api-push@system.gserviceaccount.com` publisher grant, and the authenticated push subscription whose endpoint and audience are `{API_PUBLIC_URL}/api/integrations/gmail/pubsub`.
+
+You set on Render, for the API and the renewal cron: `API_PUBLIC_URL`, `CREDENTIAL_ENCRYPTION_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_PUBSUB_TOPIC`, `GMAIL_PUBSUB_SERVICE_ACCOUNT`, and `GMAIL_PUBSUB_AUDIENCE` when it should not be derived. The cron command is `python -m app.jobs.renew_gmail_watches`.
 
 ## Microsoft OAuth
 

@@ -110,6 +110,7 @@ export type ChannelStatus = {
   realtime?: GmailRealtime;
   lastNotificationAt?: string | null;
   pubsubConfigured?: boolean;
+  webhookUrl?: string | null;
 };
 
 export function loadChannels(businessId: string): Promise<ChannelStatus[]> {
@@ -190,6 +191,7 @@ function parseChannel(value: unknown): ChannelStatus {
     realtime: realtimeValue(value.realtime),
     lastNotificationAt: typeof value.last_notification_at === "string" ? value.last_notification_at : null,
     pubsubConfigured: value.pubsub_configured === true,
+    webhookUrl: typeof value.webhook_url === "string" && value.webhook_url.length > 0 ? value.webhook_url : null,
   };
 }
 

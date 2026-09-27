@@ -18,6 +18,7 @@ class ChannelStatusRead(BaseModel):
     realtime: str = "not_configured"
     last_notification_at: datetime | None = None
     pubsub_configured: bool = False
+    webhook_url: str | None = None
 
 
 class WhatsAppConnectRequest(BaseModel):

@@ -155,6 +155,40 @@ def test_whatsapp_claim_is_not_verified_and_a_greeting_creates_nothing(
     assert greeting_events == 0
 
 
+def test_whatsapp_disconnect_stops_routing_and_hides_credentials(api_client: TestClient, db_session: Session) -> None:
+    business = _business(db_session, "wa-off")
+    with _env(
+        META_APP_SECRET="meta-secret",
+        META_VERIFY_TOKEN="verify-token",
+        META_ACCESS_TOKEN="meta-token",
+        API_PUBLIC_URL="https://vigie-api.example/",
+    ):
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+        connected = api_client.post(
+            "/api/integrations/whatsapp/connect",
+            json={"business_id": str(business.id), "phone_number_id": "4040"},
+        )
+        disconnected = api_client.post(
+            "/api/integrations/whatsapp/disconnect",
+            json={"business_id": str(business.id)},
+        )
+        delivered = _post_whatsapp(api_client, _whatsapp_payload("4040", "wamid.after", PROMISE, "Ada"), "meta-secret")
+    whatsapp = next(item for item in listed.json() if item["provider"] == "whatsapp")
+    assert whatsapp["webhook_url"] == "https://vigie-api.example/api/integrations/whatsapp/webhook"
+    assert whatsapp["availability"] == "available"
+    assert "meta-token" not in listed.text
+    assert "meta-secret" not in listed.text
+    assert connected.status_code == 200
+    assert disconnected.status_code == 200
+    assert disconnected.json()["availability"] == "disconnected"
+    assert delivered.json()["stored"] == 0
+    row = db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id))
+    assert row is not None
+    assert row.external_account_id is None
+    assert db_session.get(IntegrationCredential, row.id) is None
+    assert _count(db_session, Message, business.id) == 0
+
+
 def test_gmail_oauth_normalizes_and_isolates_the_business(api_client: TestClient, db_session: Session, monkeypatch) -> None:
     business = _business(db_session, "gmail-shop")
     other = _business(db_session, "gmail-other")

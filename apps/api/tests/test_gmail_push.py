@@ -318,6 +318,59 @@ def test_renewal_uses_google_expiration_and_keeps_history(
     assert later_row.connection_metadata["history_id"] == "80"
 
 
+def test_disconnected_mailbox_is_not_processed(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    business = _business(db_session, "gmail-off")
+    _connect(db_session, business, EMAIL, history_id="10")
+    _allow_push(monkeypatch)
+    with _pubsub_env():
+        disconnected = api_client.post("/api/integrations/gmail/disconnect", json={"business_id": str(business.id)})
+        delivered = api_client.post(
+            "/api/integrations/gmail/pubsub",
+            json=_push(EMAIL, "11"),
+            headers={"Authorization": "Bearer push"},
+        )
+    assert disconnected.status_code == 200
+    assert disconnected.json()["availability"] == "disconnected"
+    assert "gmail-access-token" not in disconnected.text
+    assert delivered.status_code == 200
+    assert delivered.json()["stored"] == 0
+    assert _count(db_session, Message, business.id) == 0
+
+
+def test_renewal_continues_when_one_mailbox_fails(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    first = _business(db_session, "renew-fail")
+    second = _business(db_session, "renew-ok")
+    first_row = _connect(db_session, first, "fail@example.com", history_id="80")
+    second_row = _connect(db_session, second, "ok@example.com", history_id="80")
+    soon = datetime.now(timezone.utc) + timedelta(hours=2)
+    _stamp_watch(db_session, first_row, soon)
+    _stamp_watch(db_session, second_row, soon)
+    expiration_ms = int((datetime.now(timezone.utc) + timedelta(days=6)).timestamp() * 1000)
+    calls = {"count": 0}
+
+    def renew_post(url: str, access_token: str, payload: dict) -> dict:
+        del url, payload
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ProviderError("revoked")
+        assert access_token == TOKEN
+        return {"historyId": "70", "expiration": str(expiration_ms)}
+
+    _patch_gmail(monkeypatch, _reading_get, renew_post)
+    with _pubsub_env():
+        renewed = renew_expiring_gmail_watches(db_session)
+    assert renewed == 1
+    db_session.refresh(first_row)
+    db_session.refresh(second_row)
+    errors = [first_row.connection_metadata.get("watch_error"), second_row.connection_metadata.get("watch_error")]
+    assert errors.count("Real-time listening could not be renewed.") == 1
+    assert any(row.connection_metadata.get("watch_enabled") is True for row in (first_row, second_row))
+
+
 def test_manual_status_when_pubsub_is_not_configured(api_client: TestClient, db_session: Session) -> None:
     business = _business(db_session, "manual-gmail")
     _connect(db_session, business, EMAIL)
