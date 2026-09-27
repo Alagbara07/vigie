@@ -59,7 +59,7 @@ class GmailAdapter:
         query = urlencode(
             {
                 "client_id": active.google_client_id,
-                "redirect_uri": active.google_redirect_uri,
+                "redirect_uri": active.resolved_google_redirect_uri(),
                 "response_type": "code",
                 "scope": _SCOPE,
                 "state": state,
@@ -122,7 +122,7 @@ def complete_gmail_oauth(
             "code": code,
             "client_id": settings.google_client_id,
             "client_secret": settings.google_client_secret,
-            "redirect_uri": settings.google_redirect_uri,
+            "redirect_uri": settings.resolved_google_redirect_uri(),
             "grant_type": "authorization_code",
         },
     )

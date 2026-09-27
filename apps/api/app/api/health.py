@@ -20,7 +20,7 @@ def check_database(engine: Engine) -> str:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
     except Exception:
-        logger.exception("PostgreSQL health check failed")
+        logger.error("PostgreSQL health check failed")
         return DATABASE_UNAVAILABLE
     return DATABASE_OK
 

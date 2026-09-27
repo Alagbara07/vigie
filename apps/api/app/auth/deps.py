@@ -31,8 +31,8 @@ def reject_cross_site(request: Request) -> None:
     origin = request.headers.get("origin")
     if not origin:
         return
-    allowed = get_settings().public_web_url.rstrip("/")
-    if origin.rstrip("/") != allowed:
+    allowed = set(get_settings().allowed_web_origins())
+    if origin.rstrip("/") not in allowed:
         raise HTTPException(status_code=403, detail="Cross-site request blocked.")
 
 

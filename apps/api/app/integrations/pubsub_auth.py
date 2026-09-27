@@ -30,7 +30,7 @@ def verify_pubsub_push(authorization: str | None, settings: Settings | None = No
         claims = id_token.verify_oauth2_token(
             token,
             google_requests.Request(),
-            audience=active.gmail_pubsub_audience.strip(),
+            audience=active.resolved_gmail_pubsub_audience(),
         )
     except Exception as exc:
         logger.info("Gmail Pub/Sub token was rejected")

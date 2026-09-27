@@ -1,5 +1,7 @@
 .env
 .env.local
+.env.production
+.env.development
 **/.venv/
 **/__pycache__/
 **/*.py[cod]

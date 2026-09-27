@@ -51,7 +51,7 @@ class MicrosoftAdapter:
             {
                 "client_id": active.microsoft_client_id,
                 "response_type": "code",
-                "redirect_uri": active.microsoft_redirect_uri,
+                "redirect_uri": active.resolved_microsoft_redirect_uri(),
                 "response_mode": "query",
                 "scope": _SCOPE,
                 "state": state,
@@ -117,7 +117,7 @@ def complete_microsoft_oauth(
             "client_id": settings.microsoft_client_id,
             "client_secret": settings.microsoft_client_secret,
             "code": code,
-            "redirect_uri": settings.microsoft_redirect_uri,
+            "redirect_uri": settings.resolved_microsoft_redirect_uri(),
             "grant_type": "authorization_code",
             "scope": _SCOPE,
         },

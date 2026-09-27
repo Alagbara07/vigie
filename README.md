@@ -149,7 +149,9 @@ npm run build
 
 Backend tests use `TEST_DATABASE_URL` and the `vigie_test` database. They do not call NVIDIA. SQLite is not used.
 
-`GET /api/health` returns `200` when the API and PostgreSQL are both reachable. If PostgreSQL is down, the same route returns `503` with `"database": "unavailable"`.
+`GET /api/health` returns `200` when the API and PostgreSQL are both reachable. If PostgreSQL is down, the same route returns `503` with `"database": "unavailable"`. The response does not include a connection string or a stack trace.
+
+Production hosting is Vercel for the frontend, Render for the API, and Neon for PostgreSQL. The deployment plan is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). That document prepares the repository. It does not mean the product is already deployed.
 
 ## Environment variables
 
@@ -161,11 +163,14 @@ Configuration lives in `.env` at the repository root. `.env` is gitignored. `.en
 | `POSTGRES_PASSWORD` | Docker Compose | Database password. Development default: `vigie`. |
 | `POSTGRES_DB` | Docker Compose | Development database name. Default: `vigie`. |
 | `POSTGRES_PORT` | Docker Compose | Host port. Default `5433`, so a local PostgreSQL on `5432` is left alone. |
-| `DATABASE_URL` | FastAPI | SQLAlchemy URL. Use `localhost` when the API runs on the host. |
+| `DATABASE_URL` | FastAPI | SQLAlchemy URL. Use `localhost` when the API runs on the host. Neon URLs are normalized, and production adds `sslmode=require` when it is missing. |
 | `DATABASE_CONNECT_TIMEOUT_SECONDS` | FastAPI | Database connection timeout. Default: `3`. |
 | `TEST_DATABASE_URL` | pytest | PostgreSQL URL for tests. Default database: `vigie_test`. |
+| `APP_ENV` | FastAPI | `development` locally. `production` on Render. |
 | `API_HOST` | FastAPI | Bind address. Default: `0.0.0.0`. |
-| `API_PORT` | FastAPI | API port. Default: `8000`. |
+| `API_PORT` | FastAPI | Local API port. Default: `8000`. |
+| `PORT` | FastAPI | Platform port. Render sets this. It overrides `API_PORT` when it is greater than zero. |
+| `CORS_ORIGINS` | FastAPI | Extra browser origins, comma-separated. `PUBLIC_WEB_URL` is always included. `*` is ignored. |
 | `AI_PROVIDER` | FastAPI | `heuristic` or `nvidia`. Unknown values are rejected. |
 | `NVIDIA_API_KEY` | FastAPI | Required only for NVIDIA mode. Never commit it. |
 | `NVIDIA_MODEL` | FastAPI | Model name for the NVIDIA environment in use. |
@@ -175,14 +180,15 @@ Configuration lives in `.env` at the repository root. `.env` is gitignored. `.en
 | `CREDENTIAL_ENCRYPTION_KEY` | FastAPI | Fernet key for provider tokens at rest. Never commit a real key. |
 | `GOOGLE_CLIENT_ID` | FastAPI | Gmail OAuth client. Leave empty until a Google Cloud client exists. |
 | `GOOGLE_CLIENT_SECRET` | FastAPI | Gmail OAuth secret. Never commit it. |
-| `GOOGLE_REDIRECT_URI` | FastAPI | Gmail OAuth callback on the API. |
+| `GOOGLE_REDIRECT_URI` | FastAPI | Gmail OAuth callback. Optional when `API_PUBLIC_URL` is set. |
 | `GMAIL_PUBSUB_TOPIC` | FastAPI | Pub/Sub topic for Gmail watch. Required only for real-time listening. |
-| `GMAIL_PUBSUB_AUDIENCE` | FastAPI | Expected audience of the Pub/Sub push token. Use the public push URL. |
+| `GMAIL_PUBSUB_AUDIENCE` | FastAPI | Expected audience of the Pub/Sub push token. Optional when `API_PUBLIC_URL` is set. |
 | `GMAIL_PUBSUB_SERVICE_ACCOUNT` | FastAPI | Google service account allowed to call the Gmail push endpoint. |
 | `GMAIL_WATCH_RENEW_WITHIN_HOURS` | FastAPI | How early to renew a Gmail watch. Default: `24`. |
-| `PUBLIC_WEB_URL` | FastAPI | Browser origin for OAuth redirects and session cookies. |
+| `PUBLIC_WEB_URL` | FastAPI | Browser origin for OAuth redirects, CORS, and cookie security. Use the real Vercel URL for the first deployment. |
 | `UNANSWERED_REQUEST_THRESHOLD_MINUTES` | FastAPI | How long a request can wait before a signal. Default: `60`. |
-| `API_INTERNAL_URL` | Next.js server | Rewrite target for `/api/*`. The browser does not use this value. |
+| `API_PUBLIC_URL` | FastAPI | Public API origin. OAuth callbacks, the WhatsApp webhook, and the Pub/Sub audience are derived from it when those variables are empty. |
+| `API_INTERNAL_URL` | Next.js server | Rewrite target for `/api/*`. Set this to the same public API origin. The browser does not use this value. |
 | `WEB_PORT` | Next.js | Documented frontend port. Default: `3000`. |
 
 ### Local heuristic mode

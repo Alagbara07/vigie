@@ -23,14 +23,15 @@ def set_business_cookie(response: Response, business_id: str) -> None:
 
 
 def clear_session_cookies(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE, path="/")
-    response.delete_cookie(BUSINESS_COOKIE, path="/")
+    options = _options()
+    response.delete_cookie(SESSION_COOKIE, path="/", secure=bool(options["secure"]), samesite="lax")
+    response.delete_cookie(BUSINESS_COOKIE, path="/", secure=bool(options["secure"]), samesite="lax")
 
 
 def _options() -> dict[str, object]:
     return {
         "httponly": True,
-        "secure": get_settings().public_web_url.startswith("https://"),
+        "secure": get_settings().cookies_are_secure(),
         "samesite": "lax",
         "path": "/",
     }

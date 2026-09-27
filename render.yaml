@@ -1,0 +1,103 @@
+# Render blueprint for the VIGIE API.
+# Connecting this file in the Render dashboard creates the services.
+# It does not deploy anything until you do that yourself.
+# Secret values are not stored here. Render prompts for every sync: false variable.
+# A cron job does not inherit the web service environment.
+
+services:
+  - type: web
+    name: vigie-api
+    runtime: python
+    rootDir: apps/api
+    buildCommand: pip install .
+    preDeployCommand: alembic upgrade head
+    startCommand: python -m app
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: VIGIE_DEMO_MODE
+        value: "false"
+      - key: AI_PROVIDER
+        value: heuristic
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: PUBLIC_WEB_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: API_PUBLIC_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: GMAIL_PUBSUB_TOPIC
+        sync: false
+      - key: GMAIL_PUBSUB_AUDIENCE
+        sync: false
+      - key: GMAIL_PUBSUB_SERVICE_ACCOUNT
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        sync: false
+      - key: MICROSOFT_REDIRECT_URI
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: META_PHONE_NUMBER_ID
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_MODEL
+        sync: false
+      - key: NVIDIA_BASE_URL
+        sync: false
+
+  - type: cron
+    name: vigie-gmail-watch-renewal
+    runtime: python
+    rootDir: apps/api
+    schedule: "0 6 * * *"
+    buildCommand: pip install .
+    startCommand: python -m app.jobs.renew_gmail_watches
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: VIGIE_DEMO_MODE
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: API_PUBLIC_URL
+        sync: false
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: GMAIL_PUBSUB_TOPIC
+        sync: false
+      - key: GMAIL_PUBSUB_AUDIENCE
+        sync: false
+      - key: GMAIL_PUBSUB_SERVICE_ACCOUNT
+        sync: false
