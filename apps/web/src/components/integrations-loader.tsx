@@ -17,6 +17,7 @@ import {
   oauthConnectPath,
   sendDemoMessage,
   syncGmail,
+  syncMicrosoft,
   type ChannelStatus,
   type DemoConversation,
 } from "@/lib/api/integrations";
@@ -92,6 +93,10 @@ export function IntegrationsLoader() {
           onSync={async (provider) => {
             if (provider === "gmail") {
               await syncGmail(businessId);
+              setChannels(await loadChannels(businessId));
+            }
+            if (provider === "microsoft365") {
+              await syncMicrosoft(businessId);
               setChannels(await loadChannels(businessId));
             }
           }}

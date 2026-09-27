@@ -269,6 +269,7 @@ export function IntegrationsPanel({
             <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
             <WhatsAppSetup channel={channel} />
             <GmailSetup channel={channel} />
+            <MicrosoftSetup channel={channel} />
             {channel.accountLabel ? <p className="mt-3 text-sm">Account {channel.accountLabel}</p> : null}
             <GmailRealtimeStatus channel={channel} />
             <p className="mt-2 text-sm text-[var(--muted)]">
@@ -283,22 +284,26 @@ export function IntegrationsPanel({
               <p className="mt-4 text-sm text-[var(--muted)]">You do not have permission to manage integrations.</p>
             ) : channel.availability === "connected" ? (
               <div className="mt-4 flex flex-wrap gap-2">
+                {channel.provider === "gmail" || channel.provider === "microsoft365" ? (
+                  <button
+                    type="button"
+                    disabled={busyProvider === channel.provider}
+                    onClick={() =>
+                      void runChannelAction(
+                        channel.provider,
+                        onSync ? () => onSync(channel.provider) : undefined,
+                        channel.provider === "microsoft365"
+                          ? "VIGIE couldn't sync Microsoft 365. Please try again."
+                          : "VIGIE couldn't sync Gmail. Please try again.",
+                      )
+                    }
+                    className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
+                  >
+                    Sync now
+                  </button>
+                ) : null}
                 {channel.provider === "gmail" ? (
                   <>
-                    <button
-                      type="button"
-                      disabled={busyProvider === channel.provider}
-                      onClick={() =>
-                        void runChannelAction(
-                          channel.provider,
-                          onSync ? () => onSync(channel.provider) : undefined,
-                          "VIGIE couldn't sync Gmail. Please try again.",
-                        )
-                      }
-                      className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
-                    >
-                      Sync now
-                    </button>
                     {channel.listening ? null : (
                       <button
                         type="button"
@@ -454,6 +459,33 @@ function WhatsAppSetup({ channel }: { channel: ChannelStatus }) {
   );
 }
 
+function MicrosoftSetup({ channel }: { channel: ChannelStatus }) {
+  if (channel.provider !== "microsoft365") {
+    return null;
+  }
+  if (!channel.configured) {
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        Microsoft Entra credentials are not set on the API. Microsoft 365 stays not configured until a client id,
+        client secret, tenant, and redirect URI exist.
+      </p>
+    );
+  }
+  if (channel.availability === "connected") {
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        Sync now reads recent Outlook mail for this business. VIGIE does not send email.
+      </p>
+    );
+  }
+  return (
+    <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+      Connect Microsoft starts OAuth. Microsoft returns the mailbox to the API. VIGIE stores that mailbox for this
+      business and does not send email.
+    </p>
+  );
+}
+
 function GmailSetup({ channel }: { channel: ChannelStatus }) {
   if (channel.provider !== "gmail") {
     return null;
@@ -507,7 +539,7 @@ function connectLabel(channel: ChannelStatus): string {
     return channel.availability === "error" || channel.availability === "disconnected" ? "Reconnect" : "Connect Google";
   }
   if (channel.provider === "microsoft365") {
-    return "Connect Microsoft";
+    return channel.availability === "error" || channel.availability === "disconnected" ? "Reconnect" : "Connect Microsoft";
   }
   return "Connect";
 }

@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 from sqlalchemy.orm import Session
 
+from app.auth.crypto import open_secret
 from app.core.config import Settings, get_settings
 from app.domain.enums import IntegrationProvider, MessageSource, SenderType
 from app.domain.errors import AIProviderError, InvalidProposalError, ProviderError
@@ -17,11 +18,11 @@ from app.integrations.connections import (
     save_connection,
     store_credential,
 )
+from app.models import ChannelConnection, IntegrationCredential
 from app.services.audit import record_audit
 from app.integrations.http_client import get_json, post_form
 from app.integrations.messages import NormalizedMessage
 from app.integrations.provider import OutboundDisabled
-from app.models import IntegrationCredential
 from app.services.ingestion import ingest_message
 from app.services.intake import schedule_message_analysis
 
@@ -34,6 +35,7 @@ _MESSAGES_URL = (
     "?$top=10&$select=id,conversationId,subject,from,toRecipients,receivedDateTime,body"
 )
 _PROVIDER_FAILURE = "The provider could not complete the connection."
+_RECONNECT = "Microsoft 365 needs to be reconnected."
 
 
 class MicrosoftAdapter:
@@ -130,14 +132,13 @@ def complete_microsoft_oauth(
     account_id = str(profile.get("id") or email).strip()
     if not email or not account_id:
         raise ProviderError(_PROVIDER_FAILURE)
-    display = str(profile.get("displayName") or email).strip()
     connection = save_connection(
         session,
         business_id=business_id,
         provider=IntegrationProvider.MICROSOFT365,
         external_account_id=account_id,
-        display_name=display,
-        metadata={"mail": email, "scope": _SCOPE},
+        display_name=email,
+        metadata={"mail": email, "profile_name": str(profile.get("displayName") or email).strip(), "scope": _SCOPE},
         connected_by_user_id=user_id,
     )
     refresh = tokens.get("refresh_token")
@@ -161,11 +162,11 @@ def complete_microsoft_oauth(
 
 def sync_microsoft(session: Session, business_id: uuid.UUID) -> dict[str, int]:
     connection = require_connected(session, business_id, IntegrationProvider.MICROSOFT365)
-    secret = session.get(IntegrationCredential, connection.id)
     try:
-        access_token = plaintext_access_token(secret)
-    except ProviderError:
-        mark_sync(session, connection.id, "Configuration required.", failed=True)
+        access_token = access_token_for(session, connection)
+    except ProviderError as exc:
+        message = str(exc) if str(exc) in {_RECONNECT, "Configuration required."} else "VIGIE could not sync Microsoft 365."
+        mark_sync(session, connection.id, message, failed=True)
         raise
     try:
         listing = get_json(_MESSAGES_URL, access_token)
@@ -191,6 +192,39 @@ def sync_microsoft(session: Session, business_id: uuid.UUID) -> dict[str, int]:
     except (AIProviderError, InvalidProposalError) as exc:
         mark_sync(session, connection.id, "VIGIE could not interpret the latest message.", failed=False)
         raise ProviderError("VIGIE could not sync Microsoft 365.") from exc
+
+
+def access_token_for(session: Session, connection: ChannelConnection) -> str:
+    secret = session.get(IntegrationCredential, connection.id)
+    token = plaintext_access_token(secret)
+    if secret is not None and _token_is_current(secret.expires_at):
+        return token
+    refresh = open_secret(secret.refresh_token) if secret is not None and secret.refresh_token else None
+    if not refresh:
+        raise ProviderError(_RECONNECT)
+    settings = get_settings()
+    tokens = post_form(
+        f"{_authority(settings)}/token",
+        {
+            "client_id": settings.microsoft_client_id,
+            "client_secret": settings.microsoft_client_secret,
+            "refresh_token": refresh,
+            "grant_type": "refresh_token",
+            "scope": _SCOPE,
+        },
+    )
+    access = tokens.get("access_token")
+    if not isinstance(access, str) or not access:
+        raise ProviderError(_RECONNECT)
+    rotated = tokens.get("refresh_token")
+    store_credential(
+        session,
+        connection,
+        access_token=access,
+        refresh_token=rotated if isinstance(rotated, str) and rotated else refresh,
+        expires_at=_expiry(tokens.get("expires_in")),
+    )
+    return access
 
 
 def _authority(settings: Settings) -> str:
@@ -223,6 +257,14 @@ def _recipient(recipients: list) -> str | None:
 def _visible_text(value: str) -> str:
     without_tags = re.sub(r"<[^>]+>", " ", value)
     return re.sub(r"\s+", " ", without_tags).strip()
+
+
+def _token_is_current(expires_at: datetime | None) -> bool:
+    if expires_at is None:
+        return False
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at > datetime.now(timezone.utc) + timedelta(seconds=60)
 
 
 def _expiry(seconds: object) -> datetime:

@@ -133,6 +133,10 @@ export function syncGmail(businessId: string): Promise<void> {
   return apiPost(`/api/integrations/gmail/sync?business_id=${encodeURIComponent(businessId)}`, {}, () => undefined);
 }
 
+export function syncMicrosoft(businessId: string): Promise<void> {
+  return apiPost(`/api/integrations/microsoft/sync?business_id=${encodeURIComponent(businessId)}`, {}, () => undefined);
+}
+
 export function enableGmailListening(businessId: string): Promise<ChannelStatus> {
   return apiPost(
     `/api/integrations/gmail/watch?business_id=${encodeURIComponent(businessId)}`,

@@ -126,10 +126,22 @@ MICROSOFT_REDIRECT_URI
 Redirect URI:
 
 ```text
-https://<your-api>/api/integrations/microsoft/callback
+{API_PUBLIC_URL}/api/integrations/microsoft/callback
 ```
 
-The requested scope is `offline_access` and `https://graph.microsoft.com/Mail.Read`. `MICROSOFT_TENANT_ID` can be `common` for multi-tenant sign-in, or a directory ID. `POST /api/integrations/microsoft/sync` reads recent Outlook messages through Microsoft Graph.
+Leave `MICROSOFT_REDIRECT_URI` empty and set `API_PUBLIC_URL` to the public API origin. The API then uses that redirect. Set `MICROSOFT_REDIRECT_URI` only when the callback must differ from that derived URL. Production rejects an HTTP or localhost redirect.
+
+The requested scope is `offline_access` and `https://graph.microsoft.com/Mail.Read`. VIGIE does not request `Mail.Send`. `POST /api/integrations/microsoft/sync` reads the latest Outlook messages through `GET https://graph.microsoft.com/v1.0/me/messages` and sends them through the same analysis pipeline as the other channels. There is no Microsoft push webhook. Sync now is how new mail is imported. An expired access token is refreshed with the stored refresh token. Disconnect deletes that credential, so a later sync does nothing.
+
+`MICROSOFT_TENANT_ID` defaults to `common`. That uses `https://login.microsoftonline.com/common/oauth2/v2.0` and lets people from different Microsoft 365 organizations sign in, when the Entra app registration allows accounts in any organizational directory. Set it to one directory ID to restrict sign-in to that tenant. VIGIE still stores each mailbox on one business. Another business cannot sync it.
+
+VIGIE does this automatically after the environment is set: start OAuth, bind and consume `state`, encrypt the tokens, store the mailbox on that business, refresh an expired access token, ignore a repeated message id, and refuse sync after disconnect.
+
+You configure Microsoft Entra: an app registration, a client secret, the redirect above, delegated `Mail.Read` and `offline_access`, and admin consent when the customer's tenant requires it. For more than one organization, register the app as multi-tenant and leave `MICROSOFT_TENANT_ID` as `common`.
+
+You set on Render: `API_PUBLIC_URL`, `CREDENTIAL_ENCRYPTION_KEY`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, and `MICROSOFT_REDIRECT_URI` when it should not be derived. Microsoft has no cron job.
+
+This repository has not been tested against a live Microsoft account.
 
 ## Environment variables
 

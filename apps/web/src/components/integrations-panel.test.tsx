@@ -102,6 +102,52 @@ describe("integrations", () => {
     expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
   });
 
+  it("explains Microsoft OAuth without claiming a mailbox is connected", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={microsoft({ availability: "available", configured: true })}
+        onSend={async () => result}
+      />,
+    );
+
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText(/Connect Microsoft starts OAuth/)).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
+  });
+
+  it("shows the connected Outlook mailbox and can sync it", async () => {
+    const onSync = vi.fn(async () => undefined);
+    const onDisconnect = vi.fn(async () => undefined);
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={microsoft({
+          availability: "connected",
+          configured: true,
+          accountLabel: "ada@example.com",
+        })}
+        onSend={async () => result}
+        onSync={onSync}
+        onDisconnect={onDisconnect}
+      />,
+    );
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("Account ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText(/does not send email/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enable real-time listening" })).not.toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    });
+    expect(onSync).toHaveBeenCalledWith("microsoft365");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    });
+    expect(onDisconnect).toHaveBeenCalledWith("microsoft365");
+  });
+
   it("explains the Meta setup and does not call an unconnected number connected", () => {
     render(
       <IntegrationsPanel
@@ -272,6 +318,26 @@ describe("integrations", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 });
+
+function microsoft(overrides: Partial<ChannelStatus>): ChannelStatus[] {
+  return [
+    {
+      provider: "microsoft365",
+      label: "Microsoft 365",
+      description: "Analyze Outlook business conversations.",
+      availability: "not_configured",
+      accountLabel: null,
+      lastSyncAt: null,
+      lastError: null,
+      configured: false,
+      listening: false,
+      realtime: "not_configured",
+      lastNotificationAt: null,
+      pubsubConfigured: false,
+      ...overrides,
+    },
+  ];
+}
 
 function gmail(overrides: Partial<ChannelStatus>): ChannelStatus[] {
   return [
