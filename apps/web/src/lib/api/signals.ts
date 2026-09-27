@@ -57,6 +57,10 @@ export type SignalDetail = SignalRecord & {
     sender_type: string;
     direction: string;
     occurred_at: string;
+    source?: string | null;
+    source_label?: string | null;
+    connection?: string | null;
+    external_message_id?: string | null;
   } | null;
   conversation: ConversationBrief | null;
 };
@@ -180,6 +184,10 @@ function parseEvidence(value: unknown): SignalDetail["evidence"] {
     sender_type: requiredString(value, "sender_type"),
     direction: requiredString(value, "direction"),
     occurred_at: requiredString(value, "occurred_at"),
+    source: optionalText(value.source),
+    source_label: optionalText(value.source_label),
+    connection: optionalText(value.connection),
+    external_message_id: optionalText(value.external_message_id),
   };
 }
 

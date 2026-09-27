@@ -1,10 +1,16 @@
-export function ErrorNotice({ onRetry }: { onRetry: () => void }) {
+export function ErrorNotice({
+  onRetry,
+  title = "VIGIE couldn't load your signals.",
+  detail = "Please try again.",
+}: {
+  onRetry: () => void;
+  title?: string;
+  detail?: string;
+}) {
   return (
     <section className="max-w-lg border border-[var(--line)] bg-[var(--panel)] px-5 py-6" role="alert">
-      <h1 className="text-xl font-semibold tracking-tight">VIGIE can&apos;t reach the intelligence service.</h1>
-      <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-        Check that the API is running and try again.
-      </p>
+      <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+      <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{detail}</p>
       <button
         type="button"
         onClick={onRetry}
@@ -30,9 +36,8 @@ export function MissingBusiness() {
 export function EmptyAttention() {
   return (
     <div className="border border-[var(--line)] bg-[var(--panel)] px-5 py-8">
-      <h3 className="text-lg font-semibold">You&apos;re all caught up.</h3>
-      <p className="mt-2 max-w-md text-sm leading-6 text-[var(--muted)]">
-        VIGIE isn&apos;t seeing anything that needs your attention right now.
+      <p className="max-w-md text-sm leading-6 text-[var(--muted)]">
+        VIGIE isn&apos;t seeing anything that requires your attention right now.
       </p>
     </div>
   );
@@ -59,10 +64,10 @@ export function DashboardSkeleton() {
   );
 }
 
-export function DetailSkeleton() {
+export function DetailSkeleton({ label = "Opening the signal" }: { label?: string }) {
   return (
     <div aria-busy="true" aria-live="polite" className="max-w-2xl">
-      <p className="sr-only">Opening the signal</p>
+      <p className="sr-only">{label}</p>
       <div className="h-4 w-32 bg-[var(--line)]" />
       <div className="mt-6 h-8 w-64 bg-[var(--line)]" />
       <div className="mt-8 h-40 border border-[var(--line)] bg-[var(--panel)]" />

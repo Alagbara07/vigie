@@ -58,6 +58,10 @@ class EvidenceRead(BaseModel):
     sender_type: str
     direction: str
     occurred_at: datetime
+    source: str | None = None
+    source_label: str | None = None
+    connection: str | None = None
+    external_message_id: str | None = None
 
 
 class ConversationBrief(BaseModel):

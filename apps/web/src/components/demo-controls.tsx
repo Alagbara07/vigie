@@ -56,7 +56,7 @@ export function DemoControls({
 
   return (
     <section className="mt-8 border-t border-[var(--line)] pt-4" aria-label="Demo">
-      <p className="text-[10px] font-semibold tracking-[0.16em] text-[var(--muted)] uppercase">Demo mode</p>
+      <p className="text-[10px] font-semibold tracking-[0.16em] uppercase">Demo</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
@@ -64,15 +64,15 @@ export function DemoControls({
           onClick={() => void perform("run", onRun)}
           className="border border-[var(--ink)] px-2 py-1 text-xs font-medium disabled:opacity-60"
         >
-          {pending === "run" ? "Running" : "Run demo"}
+          {pending === "run" ? "Preparing" : "Run VIGIE Demo"}
         </button>
         <button
           type="button"
           disabled={pending !== null}
           onClick={() => void perform("reset", onReset)}
-          className="border border-[var(--line)] px-2 py-1 text-xs text-[var(--muted)] disabled:opacity-60"
+          className="px-2 py-1 text-xs text-[var(--muted)] underline-offset-4 hover:underline disabled:opacity-60"
         >
-          {pending === "reset" ? "Resetting" : "Reset demo"}
+          {pending === "reset" ? "Resetting" : "Reset"}
         </button>
       </div>
       {failed ? <p className="mt-2 text-xs text-[var(--muted)]">The demo could not be prepared.</p> : null}

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
   --paper: #f3f0ea;
   --panel: #fbfaf7;
   --ink: #1c1916;
@@ -12,6 +13,21 @@
   --medium-soft: #f7f1e4;
   --low: #514b45;
   --ok: #1e6b43;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #1c1916;
+  --panel: #262320;
+  --ink: #f3efe8;
+  --muted: #c9bfb4;
+  --line: #3f3832;
+  --high: #f0b4ae;
+  --high-soft: #3a2624;
+  --medium: #e6c48a;
+  --medium-soft: #3a3224;
+  --low: #d2c8be;
+  --ok: #9dceb0;
 }
 
 @theme inline {
@@ -31,4 +47,16 @@ body {
 button,
 a {
   outline-color: var(--ink);
+}
+
+.theme-offer-light {
+  display: none;
+}
+
+[data-theme="dark"] .theme-offer-dark {
+  display: none;
+}
+
+[data-theme="dark"] .theme-offer-light {
+  display: inline;
 }

@@ -31,10 +31,14 @@ describe("action review", () => {
     render(<ActionReview action={action} onApprove={async () => undefined} onReject={async () => undefined} />);
 
     expect(screen.getByRole("heading", { name: "Review action" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Why this action was recommended" })).toBeInTheDocument();
-    expect(screen.getByText(/past its due date/)).toBeInTheDocument();
+    expect(screen.getByText("VIGIE recommends. You decide.")).toBeInTheDocument();
+    expect(screen.getByText(/No customer message will be sent automatically/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Why you're seeing this" })).toBeInTheDocument();
+    expect(screen.getByText(/a ₦150,000 payment commitment is overdue/)).toBeInTheDocument();
+    expect(screen.getByText("Proposed")).toBeInTheDocument();
     expect(screen.getByText("Payment overdue")).toBeInTheDocument();
     expect(screen.getByText("₦150,000")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Suggested message" })).toBeInTheDocument();
     expect(screen.getByText(/Just following up on the ₦150,000 payment/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
@@ -46,7 +50,7 @@ describe("action review", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByText("Action approved.")).toBeInTheDocument();
-    expect(screen.getByText("No message has been sent.")).toBeInTheDocument();
+    expect(screen.getByText("No customer message was sent.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
   });
 
@@ -55,8 +59,8 @@ describe("action review", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
 
-    expect(await screen.findByText("Action rejected.")).toBeInTheDocument();
-    expect(screen.queryByText("No message has been sent.")).not.toBeInTheDocument();
+    expect(await screen.findByText("Recommendation rejected.")).toBeInTheDocument();
+    expect(screen.queryByText("No customer message was sent.")).not.toBeInTheDocument();
   });
 
   it("explains when the decision cannot be saved", async () => {
@@ -72,7 +76,7 @@ describe("action review", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
-    expect(await screen.findByRole("heading", { name: "VIGIE can't reach the intelligence service." })).toBeInTheDocument();
-    expect(screen.getByText("Check that the API is running and try again.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "VIGIE couldn't save this decision." })).toBeInTheDocument();
+    expect(screen.getByText("Please try again.")).toBeInTheDocument();
   });
 });

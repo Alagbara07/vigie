@@ -13,6 +13,16 @@ class Channel(StrEnum):
     SIMULATED = "simulated"
     WHATSAPP = "whatsapp"
     EMAIL = "email"
+    DEMO = "demo"
+
+
+class MessageSource(StrEnum):
+    """Where a normalized message came from. The engine does not branch on this."""
+
+    WHATSAPP = "whatsapp"
+    GMAIL = "gmail"
+    MICROSOFT365 = "microsoft365"
+    DEMO = "demo"
 
 
 class ConversationStatus(StrEnum):

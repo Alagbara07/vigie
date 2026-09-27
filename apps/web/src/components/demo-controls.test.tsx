@@ -13,9 +13,9 @@ describe("demo controls", () => {
   it("shows the demo controls only in demo mode", () => {
     render(<DemoControls />);
 
-    expect(screen.getByText("Demo mode")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run demo" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reset demo" })).toBeInTheDocument();
+    expect(screen.getByText("Demo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run VIGIE Demo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
   });
 
   it("explains when the demo cannot be prepared", async () => {
@@ -27,7 +27,7 @@ describe("demo controls", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Run demo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run VIGIE Demo" }));
 
     expect(await screen.findByText("The demo could not be prepared.")).toBeInTheDocument();
   });
@@ -35,6 +35,6 @@ describe("demo controls", () => {
   it("does not mount controls before demo mode is known", () => {
     render(<DemoControlsLoader />);
 
-    expect(screen.queryByText("Demo mode")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run VIGIE Demo" })).not.toBeInTheDocument();
   });
 });

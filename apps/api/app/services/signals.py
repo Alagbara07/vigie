@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.attention import classify_attention
+from app.integrations.messages import describe_source
 from app.domain.enums import Severity, SignalCategory, SignalStatus, SignalType
 from app.domain.errors import NotFoundError
 from app.models import Action, Business, BusinessEvent, Commitment, Conversation, Customer, Message, Signal
@@ -121,15 +122,7 @@ def get_signal_detail(session: Session, signal_id: uuid.UUID, business_id: uuid.
             description=commitment.description,
         ),
         event=None if event is None else _event_brief(event),
-        evidence=None
-        if message is None
-        else EvidenceRead(
-            message_id=message.id,
-            content=message.content,
-            sender_type=message.sender_type,
-            direction=message.direction,
-            occurred_at=message.occurred_at,
-        ),
+        evidence=None if message is None else _evidence_read(message),
         conversation=None if conversation is None else _conversation_brief(session, business_id, conversation),
         action=_action_brief(action),
     )
@@ -213,6 +206,21 @@ def _conversation_for(
     if conversation is None or conversation.business_id != business_id:
         return None
     return conversation
+
+
+def _evidence_read(message: Message) -> EvidenceRead:
+    label, connection = describe_source(message.source)
+    return EvidenceRead(
+        message_id=message.id,
+        content=message.content,
+        sender_type=message.sender_type,
+        direction=message.direction,
+        occurred_at=message.occurred_at,
+        source=message.source,
+        source_label=label,
+        connection=connection,
+        external_message_id=message.external_message_id,
+    )
 
 
 def _event_brief(event: BusinessEvent) -> EventBrief:

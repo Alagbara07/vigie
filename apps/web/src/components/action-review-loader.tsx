@@ -32,6 +32,7 @@ export function ActionReviewLoader() {
   }, [actionId, businessId]);
 
   useEffect(() => {
+    document.title = "Review · VIGIE";
     const timer = window.setTimeout(() => {
       void load();
     }, 0);
@@ -40,8 +41,14 @@ export function ActionReviewLoader() {
 
   return (
     <AppShell>
-      {state.phase === "loading" ? <DetailSkeleton /> : null}
-      {state.phase === "error" ? <ErrorNotice onRetry={() => void load()} /> : null}
+      {state.phase === "loading" ? <DetailSkeleton label="Opening the recommendation" /> : null}
+      {state.phase === "error" ? (
+        <ErrorNotice
+          onRetry={() => void load()}
+          title="VIGIE couldn't open this recommendation."
+          detail="Please try again."
+        />
+      ) : null}
       {state.phase === "ready" ? (
         <ActionReview
           action={state.action}

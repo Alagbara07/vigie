@@ -19,6 +19,7 @@ import {
   relativeTime,
   severityLabel,
 } from "@/lib/format";
+import { attentionHeadline, countOpen, PRODUCT_LINE, stateLabel, whatHappened, whyItMatters } from "@/lib/product";
 import { EmptyAttention } from "@/components/states";
 
 const KINDS: { id: SignalKindFilter; label: string }[] = [
@@ -48,6 +49,8 @@ export function CommandCenter({ summary, signals, now = new Date() }: CommandCen
     .filter((signal) => matchesStatus(signal.status, status))
     .sort(byImportance);
   const caughtUp = summary.open_signals === 0 && (status === "open" || status === "all") && kind === "all";
+  const overduePayments = countOpen(signals, "OVERDUE_PAYMENT");
+  const waitingRequests = countOpen(signals, "UNANSWERED_REQUEST");
 
   return (
     <div>
@@ -57,25 +60,30 @@ export function CommandCenter({ summary, signals, now = new Date() }: CommandCen
         <h1 className="mt-8 font-[family-name:var(--font-newsreader)] text-4xl leading-tight font-medium tracking-tight">
           {greetingFor(now, summary.timezone)}, {givenName(summary.business_name)}.
         </h1>
-        <p className="mt-2 text-lg text-[var(--muted)]">Here&apos;s what needs your attention.</p>
+        <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--ink)]">{PRODUCT_LINE}</p>
       </header>
 
       <section aria-labelledby="attention-summary" className="mt-8">
-        <h2 id="attention-summary" className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">
-          Attention required
+        <h2 id="attention-summary" className="font-[family-name:var(--font-newsreader)] text-3xl leading-tight font-medium">
+          {summary.open_signals === 0 ? "You're all caught up." : attentionHeadline(summary.open_signals)}
         </h2>
-        <dl className="mt-3 grid grid-cols-2 gap-px border border-[var(--line)] bg-[var(--line)] lg:grid-cols-4">
-          <Stat value={String(summary.open_signals)} label="Open signals" />
-          <Stat value={String(summary.high_priority_signals)} label="High priority" />
+        <dl className="mt-5 grid grid-cols-1 gap-px border border-[var(--line)] bg-[var(--line)] sm:grid-cols-3">
           <Stat value={formatMoney(summary.revenue_at_risk, summary.currency)} label="Revenue at risk" />
-          <Stat value={String(summary.missed_commitments)} label="Missed commitments" />
+          <Stat
+            value={String(overduePayments)}
+            label={overduePayments === 1 ? "Overdue payment" : "Overdue payments"}
+          />
+          <Stat
+            value={String(waitingRequests)}
+            label={waitingRequests === 1 ? "Customer request waiting" : "Customer requests waiting"}
+          />
         </dl>
       </section>
 
       <div className="mt-10 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section aria-labelledby="signal-feed">
           <h2 id="signal-feed" className="text-lg font-semibold">
-            Needs your attention
+            What needs attention
           </h2>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <FilterGroup label="Signal kind" value={kind} options={KINDS} onChange={setKind} />
@@ -158,34 +166,39 @@ function SignalRow({
   const href = signalHref(signal.id, businessId);
   return (
     <li className={`border-b border-[var(--line)] border-l-2 py-5 pl-4 ${toneClass(tone.tone)}`}>
-      <p className={`text-[11px] font-semibold tracking-[0.14em] uppercase ${toneText(tone.tone)}`}>{tone.label}</p>
-      <h3 className="mt-1 text-lg font-semibold">{signal.title}</h3>
-      <p className="mt-2 max-w-xl text-sm leading-6 break-words text-[var(--muted)]">{signal.description}</p>
-      {signal.financial_impact_amount && signal.currency ? (
-        <p className="mt-3 text-sm">
-          <span className="text-[var(--muted)]">Revenue at risk </span>
-          <span className="font-semibold tabular-nums">
-            {formatMoney(signal.financial_impact_amount, signal.currency)}
-          </span>
-        </p>
-      ) : null}
-      <p className="mt-3 text-xs text-[var(--muted)]">
-        {signal.customer_name ?? "Customer"}
-        <span aria-hidden="true"> · </span>
-        {relativeTime(signal.created_at, now)}
+      <p className={`text-[11px] font-semibold tracking-[0.14em] uppercase ${toneText(tone.tone)}`}>
+        {tone.label}
+        <span className="text-[var(--muted)]"> · {stateLabel(signal.status)}</span>
       </p>
+      <h3 className="mt-1 text-lg font-semibold">{signal.title}</h3>
+      <dl className="mt-4 max-w-xl space-y-3 text-sm leading-6">
+        <div>
+          <dt className="text-[11px] tracking-[0.14em] text-[var(--muted)] uppercase">What happened</dt>
+          <dd className="mt-1 break-words">{whatHappened(signal)}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] tracking-[0.14em] text-[var(--muted)] uppercase">Customer</dt>
+          <dd className="mt-1">{signal.customer_name ?? "Customer"}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] tracking-[0.14em] text-[var(--muted)] uppercase">Why this matters</dt>
+          <dd className="mt-1 break-words text-[var(--muted)]">{whyItMatters(signal)}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-xs text-[var(--muted)]">{relativeTime(signal.created_at, now)}</p>
       <Link href={href} className="mt-3 inline-block text-sm font-medium underline-offset-4 hover:underline">
-        View details
+        View evidence
       </Link>
       {signal.action ? (
         <div className="mt-4 border-t border-[var(--line)] pt-3">
-          <p className="text-[11px] tracking-[0.14em] text-[var(--muted)] uppercase">Recommended action</p>
-          <p className="mt-1 text-sm">{signal.action.title ?? "Review the recommendation"}</p>
+          <p className="text-[11px] tracking-[0.14em] text-[var(--muted)] uppercase">Recommended</p>
+          <p className="mt-1 text-sm break-words">{signal.action.title ?? "Review the recommendation"}</p>
+          <p className="mt-1 text-xs font-semibold tracking-[0.12em] uppercase">{stateLabel(signal.action.status)}</p>
           <Link
             href={actionHref(signal.action.id, businessId)}
-            className="mt-2 inline-block text-sm font-medium underline-offset-4 hover:underline"
+            className="mt-2 inline-block border border-[var(--ink)] px-3 py-1.5 text-sm font-medium"
           >
-            Review action
+            Review
           </Link>
         </div>
       ) : null}
@@ -199,6 +212,7 @@ function RecentConversations({ summary, now }: { summary: DashboardSummary; now:
       <h2 id="recent-conversations" className="text-sm font-semibold">
         Recent conversations
       </h2>
+      <p className="mt-1 text-sm text-[var(--muted)]">Not every conversation needs attention.</p>
       {summary.recent_conversations.length === 0 ? (
         <p className="mt-3 text-sm text-[var(--muted)]">No conversations yet.</p>
       ) : (

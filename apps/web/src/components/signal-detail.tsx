@@ -3,9 +3,20 @@ import Link from "next/link";
 import { actionHref } from "@/lib/api/actions";
 import type { SignalDetail } from "@/lib/api/signals";
 import { formatDate, formatMoney, severityLabel } from "@/lib/format";
+import { detectedAs, reachedSteps, stateLabel, whyItMatters } from "@/lib/product";
 
 export function SignalDetailView({ detail }: { detail: SignalDetail }) {
   const tone = severityLabel(detail.severity);
+  const amount =
+    detail.commitment?.amount && detail.commitment.currency
+      ? formatMoney(detail.commitment.amount, detail.commitment.currency)
+      : detail.financial_impact_amount && detail.currency
+        ? formatMoney(detail.financial_impact_amount, detail.currency)
+        : null;
+  const due =
+    detail.commitment?.due_text ??
+    (detail.commitment?.due_at ? formatDate(detail.commitment.due_at, detail.timezone) : null);
+
   return (
     <article className="max-w-2xl">
       <Link href="/" className="text-sm text-[var(--muted)] underline-offset-4 hover:underline">
@@ -13,49 +24,66 @@ export function SignalDetailView({ detail }: { detail: SignalDetail }) {
       </Link>
       <p className={`mt-6 text-[11px] font-semibold tracking-[0.14em] uppercase ${toneText(tone.tone)}`}>
         {tone.label}
+        <span className="text-[var(--muted)]"> · {stateLabel(detail.status)}</span>
       </p>
       <h1 className="mt-2 font-[family-name:var(--font-newsreader)] text-4xl leading-tight font-medium">
         {detail.title}
       </h1>
-      <p className="mt-2 text-sm text-[var(--muted)]">{detail.status}</p>
 
-      <section className="mt-8 border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
-        <h2 className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">What happened</h2>
-        {detail.event ? (
-          <p className="mt-3 text-sm">
-            Detected event <span className="font-medium">{detail.event.event_type}</span>
-          </p>
+      <section className="mt-8">
+        <h2 className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Evidence</h2>
+        {detail.evidence ? (
+          <figure className="mt-3 border-l-2 border-[var(--ink)] pl-4">
+            {detail.evidence.source_label ? (
+              <p className="text-sm font-medium">{detail.evidence.source_label}</p>
+            ) : null}
+            {detail.evidence.connection ? (
+              <p className="mt-1 text-xs tracking-[0.14em] text-[var(--muted)] uppercase">{detail.evidence.connection}</p>
+            ) : null}
+            {detail.customer ? <p className="mt-3 text-sm">{detail.customer.name}</p> : null}
+            <figcaption className="mt-3 text-xs tracking-[0.14em] text-[var(--muted)] uppercase">Customer message</figcaption>
+            <blockquote className="mt-2 text-base leading-7 break-words">&ldquo;{detail.evidence.content}&rdquo;</blockquote>
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              Received {formatDate(detail.evidence.occurred_at, detail.timezone)}
+            </p>
+            {detail.evidence.external_message_id ? (
+              <p className="mt-1 text-xs text-[var(--muted)]">External message {detail.evidence.external_message_id}</p>
+            ) : null}
+          </figure>
         ) : (
-          <p className="mt-3 text-sm text-[var(--muted)]">No business event is attached.</p>
+          <p className="mt-3 text-sm text-[var(--muted)]">No source message is attached to this signal.</p>
         )}
-        {detail.commitment ? (
-          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+        <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+          {detail.event ? (
             <div>
-              <dt className="text-[var(--muted)]">Commitment</dt>
-              <dd className="mt-1 font-medium">
-                {detail.commitment.amount && detail.commitment.currency
-                  ? formatMoney(detail.commitment.amount, detail.commitment.currency)
-                  : detail.commitment.commitment_type}
-              </dd>
+              <dt className="text-[var(--muted)]">Detected as</dt>
+              <dd className="mt-1 font-medium">{detectedAs(detail.event.event_type)}</dd>
             </div>
+          ) : null}
+          {amount ? (
+            <div>
+              <dt className="text-[var(--muted)]">Amount</dt>
+              <dd className="mt-1 font-medium tabular-nums">{amount}</dd>
+            </div>
+          ) : null}
+          {due ? (
             <div>
               <dt className="text-[var(--muted)]">Due</dt>
-              <dd className="mt-1 font-medium">
-                {detail.commitment.due_text ??
-                  (detail.commitment.due_at ? formatDate(detail.commitment.due_at, detail.timezone) : "No date")}
-              </dd>
+              <dd className="mt-1 font-medium">{due}</dd>
             </div>
+          ) : null}
+          {detail.commitment ? (
             <div>
-              <dt className="text-[var(--muted)]">Current state</dt>
-              <dd className="mt-1 font-medium">{detail.commitment.status}</dd>
+              <dt className="text-[var(--muted)]">Commitment</dt>
+              <dd className="mt-1 font-medium">{stateLabel(detail.commitment.status)}</dd>
             </div>
-          </dl>
-        ) : null}
+          ) : null}
+        </dl>
       </section>
 
-      <section className="mt-6">
+      <section className="mt-8">
         <h2 className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Why this matters</h2>
-        <p className="mt-3 max-w-xl text-base leading-7">{detail.description}</p>
+        <p className="mt-3 max-w-xl text-base leading-7 break-words">{whyItMatters(detail)}</p>
         {detail.financial_impact_amount && detail.currency ? (
           <p className="mt-3 text-sm">
             Revenue at risk{" "}
@@ -66,38 +94,33 @@ export function SignalDetailView({ detail }: { detail: SignalDetail }) {
         ) : null}
       </section>
 
-      <section className="mt-6">
-        <h2 className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Evidence</h2>
-        {detail.evidence ? (
-          <figure className="mt-3 border-l-2 border-[var(--ink)] pl-4">
-            <figcaption className="text-xs tracking-[0.14em] text-[var(--muted)] uppercase">
-              {detail.evidence.sender_type === "customer" ? "Based on customer message" : "Based on message"}
-            </figcaption>
-            <blockquote className="mt-2 text-base leading-7">&ldquo;{detail.evidence.content}&rdquo;</blockquote>
-          </figure>
-        ) : (
-          <p className="mt-3 text-sm text-[var(--muted)]">No source message is attached to this signal.</p>
-        )}
+      <section className="mt-8" aria-labelledby="how-vigie-reached-this">
+        <h2 id="how-vigie-reached-this" className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">
+          How VIGIE reached this
+        </h2>
+        <ol className="mt-3 max-w-xl list-decimal space-y-2 pl-5 text-sm leading-6">
+          {reachedSteps(detail.signal_type).map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
       </section>
 
       {detail.action ? (
-        <section className="mt-6 border-t border-[var(--line)] pt-4">
+        <section className="mt-8 border-t border-[var(--line)] pt-5">
           <h2 className="text-[11px] tracking-[0.14em] text-[var(--muted)] uppercase">Recommended action</h2>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">
-            {detail.action.description ?? "Review the signal before deciding."}
-          </p>
-          <p className="mt-2 text-sm font-medium">{detail.action.title ?? "Review the recommendation"}</p>
+          <p className="mt-2 text-base font-medium break-words">{detail.action.title ?? "Review the recommendation"}</p>
+          <p className="mt-1 text-xs font-semibold tracking-[0.12em] uppercase">{stateLabel(detail.action.status)}</p>
           <Link
             href={actionHref(detail.action.id, detail.business_id)}
-            className="mt-3 inline-block text-sm font-medium underline-offset-4 hover:underline"
+            className="mt-3 inline-block border border-[var(--ink)] px-3 py-1.5 text-sm font-medium"
           >
-            Review action
+            Review
           </Link>
         </section>
       ) : null}
 
       {detail.customer ? (
-        <section className="mt-6 border-t border-[var(--line)] pt-5">
+        <section className="mt-8 border-t border-[var(--line)] pt-5">
           <h2 className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Customer</h2>
           <p className="mt-3 text-base font-medium">{detail.customer.name}</p>
           <p className="mt-1 text-sm text-[var(--muted)]">

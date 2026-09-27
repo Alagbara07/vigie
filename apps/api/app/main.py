@@ -11,6 +11,7 @@ from app.api.demo import router as demo_router
 from app.api.evaluations import router as evaluations_router
 from app.api.health import router as health_router
 from app.api.inbox import router as inbox_router
+from app.api.integrations import router as integrations_router
 from app.api.signals import router as signals_router
 from app.api.system import router as system_router
 
@@ -40,3 +41,4 @@ app.include_router(signals_router)
 app.include_router(actions_router)
 app.include_router(dashboard_router)
 app.include_router(demo_router)
+app.include_router(integrations_router)

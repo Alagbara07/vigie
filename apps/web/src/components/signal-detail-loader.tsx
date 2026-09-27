@@ -34,6 +34,7 @@ export function SignalDetailLoader() {
   }, [businessId, signalId]);
 
   useEffect(() => {
+    document.title = "Signal · VIGIE";
     const timer = window.setTimeout(() => {
       void load();
     }, 0);

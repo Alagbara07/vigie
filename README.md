@@ -57,6 +57,18 @@ Both return a `MessageAnalysisProposal`. Pydantic rejects a malformed proposal. 
 
 `GET /api/system/ai-provider` reports the selected provider and whether it is configured. It does not return credentials.
 
+## AI safety model
+
+The model proposes. VIGIE validates. The domain engine decides. The human approves.
+
+A NVIDIA failure stays a NVIDIA failure. The heuristic provider is selected only when `AI_PROVIDER=heuristic`. It is not an automatic fallback.
+
+## How VIGIE connects to businesses
+
+VIGIE is designed as a channel-agnostic intelligence layer. Communication providers feed normalized messages into the same analysis pipeline. The current prototype includes a simulated WhatsApp Business connector to demonstrate this ingestion architecture without requiring external provider credentials.
+
+A prototype connector accepts a message, stores it once, and hands it to the existing analysis service. A production integration will do the same after its own adapter checks the provider's signature or token. WhatsApp, Gmail, and Microsoft 365 credentials are not connected in this build. See `docs/INTEGRATIONS.md`.
+
 ## Demo
 
 The local story is Adaeze Wears, timezone `Africa/Lagos`.
@@ -66,7 +78,7 @@ The local story is Adaeze Wears, timezone `Africa/Lagos`.
 | Amaka Bello | I'll pay the remaining ₦150,000 on Friday. | Payment commitment. Pending until the due day has passed, then missed. |
 | Ngozi Eze | How much is the wholesale price for 100 units? | Unanswered request. A signal opens after the reply threshold. |
 | Chinedu Okafor | I sent the ₦150,000 balance yesterday. Please confirm. | Payment claim. `payment_verified` stays false. |
-| Tunde Adeyemi | Good morning. | No event, commitment, or signal. |
+| Tunde Adeyemi | Good morning. | No event, commitment, signal, or action. |
 
 With `VIGIE_DEMO_MODE=true`, `POST /api/demo/run` resets that inbox and replays the story. Analysis uses `2026-09-24T09:00:00+01:00`. Evaluation then uses `2026-09-26T09:00:00+01:00`. Those are reference times, not the machine clock. The follow-up action is left `PROPOSED` so a person can approve it in the Command Center. When demo mode is off, the reset and run routes respond `404`.
 
@@ -112,6 +124,14 @@ cd apps/api
 ```
 
 ## Tests
+
+From the repository root, with PostgreSQL running:
+
+```powershell
+.\verify.ps1
+```
+
+That runs the backend suite, the frontend suite, lint, and the production build.
 
 From `apps/api`, with PostgreSQL running:
 

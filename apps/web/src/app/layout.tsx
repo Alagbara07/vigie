@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+
+import { themeBootScript } from "@/lib/theme";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,8 +21,12 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "VIGIE",
-  description: "L'intelligence qui veille sur votre entreprise.",
+  title: {
+    default: "VIGIE",
+    template: "%s · VIGIE",
+  },
+  description:
+    "VIGIE watches your business conversations, remembers important commitments and requests, and surfaces what needs your attention.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -28,8 +34,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        {children}
+      </body>
     </html>
   );
 }

@@ -147,6 +147,18 @@ class Message(Base):
             name="ck_messages_direction",
         ),
         CheckConstraint("char_length(content) > 0", name="ck_messages_content_not_blank"),
+        CheckConstraint(
+            "source IS NULL OR source IN ('whatsapp', 'gmail', 'microsoft365', 'demo')",
+            name="ck_messages_source",
+        ),
+        Index(
+            "uq_messages_business_source_external",
+            "business_id",
+            "source",
+            "external_message_id",
+            unique=True,
+            postgresql_where=text("external_message_id IS NOT NULL"),
+        ),
         Index("ix_messages_conversation_occurred", "conversation_id", "occurred_at"),
     )
 
@@ -161,6 +173,8 @@ class Message(Base):
     sender_identifier: Mapped[str | None] = mapped_column(String(200), nullable=True)
     direction: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_message_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     message_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     created_at: Mapped[datetime] = _created_at()

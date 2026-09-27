@@ -12,8 +12,10 @@ from app.domain.errors import ConflictError
 from app.main import app
 from app.models import Action, Business, BusinessEvent, Commitment, Conversation, Customer, Message, Signal
 from app.seed.demo import GREETING_TEXT
-from app.services.actions import approve_action, reject_action
+from app.services.actions import approve_action, recommend_actions, reject_action
+from app.services.analysis import analyze_stored_message
 from app.services.demo import reset_demo, run_demo
+from app.services.evaluation import run_evaluation
 
 MVP_PATHS = {
     "/api/health": {"get"},
@@ -30,6 +32,7 @@ MVP_PATHS = {
     "/api/system/demo": {"get"},
     "/api/demo/reset": {"post"},
     "/api/demo/run": {"post"},
+    "/api/integrations/demo/messages": {"get", "post"},
 }
 
 
@@ -133,7 +136,11 @@ def test_demo_story_reaches_an_approved_follow_up(db_session: Session) -> None:
     assert signals["OVERDUE_PAYMENT"].severity == "HIGH"
     assert signals["UNANSWERED_REQUEST"].status == "OPEN"
     assert greeting is not None
+    greeting_customer = db_session.get(Conversation, greeting.conversation_id)
+    assert greeting_customer is not None
     assert _events_for_message(db_session, greeting.id) == 0
+    assert _rows_for(db_session, Commitment, Commitment.source_message_id, greeting.id) == 0
+    assert _rows_for(db_session, Signal, Signal.customer_id, greeting_customer.customer_id) == 0
     assert _count_direction(db_session, "outbound") == 0
 
     follow_up = _action(db_session, business.id, "FOLLOW_UP_CUSTOMER")
@@ -150,6 +157,28 @@ def test_demo_story_reaches_an_approved_follow_up(db_session: Session) -> None:
         approve_action(db_session, follow_up.id, business.id)
     with pytest.raises(ConflictError):
         reject_action(db_session, follow_up.id, business.id)
+
+
+def test_reprocessing_the_same_demo_does_not_duplicate_rows(db_session: Session) -> None:
+    run_demo(db_session, HeuristicAIProvider())
+    business = db_session.scalar(select(Business).where(Business.slug == "adaeze-wears"))
+    assert business is not None
+    messages = list(db_session.scalars(select(Message).where(Message.business_id == business.id)).all())
+
+    for message in messages:
+        analyze_stored_message(db_session, message.id, business.id, BEFORE_DUE, HeuristicAIProvider())
+    run_evaluation(db_session, business.id, BEFORE_DUE)
+    again = run_evaluation(db_session, business.id, AFTER_DUE)
+    recommended = recommend_actions(db_session, business.id)
+
+    assert again.signals_created == 0
+    assert again.signals_existing == 2
+    assert recommended.actions_created == 0
+    assert recommended.actions_existing == 2
+    assert _rows_for(db_session, BusinessEvent, BusinessEvent.business_id, business.id) == 3
+    assert _rows_for(db_session, Commitment, Commitment.business_id, business.id) == 1
+    assert _rows_for(db_session, Signal, Signal.business_id, business.id) == 2
+    assert _rows_for(db_session, Action, Action.business_id, business.id) == 2
 
 
 def test_demo_run_endpoint_returns_the_measured_story(api_client: TestClient) -> None:
@@ -188,6 +217,10 @@ def _event(session: Session, business_id, event_type: str) -> BusinessEvent | No
             BusinessEvent.event_type == event_type,
         )
     )
+
+
+def _rows_for(session: Session, model: type, column, value) -> int:
+    return int(session.scalar(select(func.count()).select_from(model).where(column == value)) or 0)
 
 
 def _events_for_message(session: Session, message_id) -> int:

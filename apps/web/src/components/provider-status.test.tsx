@@ -7,7 +7,7 @@ describe("provider indicator", () => {
   it("shows NVIDIA only when that provider is configured", () => {
     render(<ProviderIndicator status={{ provider: "nvidia", configured: true, model: "example-model" }} />);
 
-    expect(screen.getByText("Intelligence")).toBeInTheDocument();
+    expect(screen.getByText("Understanding")).toBeInTheDocument();
     expect(screen.getByText("NVIDIA")).toBeInTheDocument();
     expect(screen.queryByText("example-model")).not.toBeInTheDocument();
   });
@@ -15,15 +15,15 @@ describe("provider indicator", () => {
   it("does not claim NVIDIA is active when configuration is missing", () => {
     render(<ProviderIndicator status={{ provider: "nvidia", configured: false, model: null }} />);
 
-    expect(screen.getByText("NVIDIA is not configured")).toBeInTheDocument();
+    expect(screen.getByText("NVIDIA is not connected")).toBeInTheDocument();
     expect(screen.queryByText("●")).not.toBeInTheDocument();
   });
 
-  it("shows the heuristic provider when that is what is running", () => {
-    render(<ProviderIndicator status={{ provider: "heuristic", configured: true, model: null }} />);
+  it("keeps the local provider off the command center", () => {
+    const { container } = render(<ProviderIndicator status={{ provider: "heuristic", configured: true, model: null }} />);
 
-    expect(screen.getByText("Heuristic")).toBeInTheDocument();
-    expect(screen.queryByText("NVIDIA")).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText("Heuristic")).not.toBeInTheDocument();
   });
 
   it("shows nothing when the status cannot be loaded", () => {
