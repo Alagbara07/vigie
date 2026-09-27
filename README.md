@@ -67,7 +67,7 @@ A NVIDIA failure stays a NVIDIA failure. The heuristic provider is selected only
 
 VIGIE is designed as a channel-agnostic intelligence layer. Communication providers feed normalized messages into the same analysis pipeline. The current prototype includes a simulated WhatsApp Business connector to demonstrate this ingestion architecture without requiring external provider credentials.
 
-A prototype connector accepts a message, stores it once, and hands it to the existing analysis service. A production integration will do the same after its own adapter checks the provider's signature or token. WhatsApp, Gmail, and Microsoft 365 credentials are not connected in this build. See `docs/INTEGRATIONS.md`.
+A prototype connector accepts a message, stores it once, and hands it to the existing analysis service. WhatsApp, Gmail, and Microsoft 365 adapters use the same normalized message. They are not connected unless that provider's credentials are configured, and this repository does not claim a live provider connection. See `docs/INTEGRATIONS.md`.
 
 ## Demo
 
@@ -80,9 +80,9 @@ The local story is Adaeze Wears, timezone `Africa/Lagos`.
 | Chinedu Okafor | I sent the ₦150,000 balance yesterday. Please confirm. | Payment claim. `payment_verified` stays false. |
 | Tunde Adeyemi | Good morning. | No event, commitment, signal, or action. |
 
-With `VIGIE_DEMO_MODE=true`, `POST /api/demo/run` resets that inbox and replays the story. Analysis uses `2026-09-24T09:00:00+01:00`. Evaluation then uses `2026-09-26T09:00:00+01:00`. Those are reference times, not the machine clock. The follow-up action is left `PROPOSED` so a person can approve it in the Command Center. When demo mode is off, the reset and run routes respond `404`.
+With `VIGIE_DEMO_MODE=true`, open `/demo` and choose **Try Demo**. That signs in a demo user for Adaeze Wears only. `POST /api/demo/run` then resets that inbox and replays the story. Analysis uses `2026-09-24T09:00:00+01:00`. Evaluation then uses `2026-09-26T09:00:00+01:00`. Those are reference times, not the machine clock. The follow-up action is left `PROPOSED` so a person can approve it in the Command Center. When demo mode is off, the demo routes respond `404`.
 
-Open the Command Center at [http://localhost:3000](http://localhost:3000).
+**Sign in** is separate. A new account creates its own business and only sees that business's data. Open the app at [http://localhost:3000](http://localhost:3000).
 
 ## Running locally
 
@@ -171,7 +171,16 @@ Configuration lives in `.env` at the repository root. `.env` is gitignored. `.en
 | `NVIDIA_MODEL` | FastAPI | Model name for the NVIDIA environment in use. |
 | `NVIDIA_BASE_URL` | FastAPI | API root for that environment, usually ending in `/v1`. |
 | `NVIDIA_TIMEOUT_SECONDS` | FastAPI | Timeout for one NVIDIA request. Default: `30`. |
-| `VIGIE_DEMO_MODE` | FastAPI | `true` enables demo reset and run. Keep `false` outside a local demo. |
+| `VIGIE_DEMO_MODE` | FastAPI | `true` enables the demo entry, reset, and run. Keep `false` outside a local demo. |
+| `CREDENTIAL_ENCRYPTION_KEY` | FastAPI | Fernet key for provider tokens at rest. Never commit a real key. |
+| `GOOGLE_CLIENT_ID` | FastAPI | Gmail OAuth client. Leave empty until a Google Cloud client exists. |
+| `GOOGLE_CLIENT_SECRET` | FastAPI | Gmail OAuth secret. Never commit it. |
+| `GOOGLE_REDIRECT_URI` | FastAPI | Gmail OAuth callback on the API. |
+| `GMAIL_PUBSUB_TOPIC` | FastAPI | Pub/Sub topic for Gmail watch. Required only for real-time listening. |
+| `GMAIL_PUBSUB_AUDIENCE` | FastAPI | Expected audience of the Pub/Sub push token. Use the public push URL. |
+| `GMAIL_PUBSUB_SERVICE_ACCOUNT` | FastAPI | Google service account allowed to call the Gmail push endpoint. |
+| `GMAIL_WATCH_RENEW_WITHIN_HOURS` | FastAPI | How early to renew a Gmail watch. Default: `24`. |
+| `PUBLIC_WEB_URL` | FastAPI | Browser origin for OAuth redirects and session cookies. |
 | `UNANSWERED_REQUEST_THRESHOLD_MINUTES` | FastAPI | How long a request can wait before a signal. Default: `60`. |
 | `API_INTERNAL_URL` | Next.js server | Rewrite target for `/api/*`. The browser does not use this value. |
 | `WEB_PORT` | Next.js | Documented frontend port. Default: `3000`. |

@@ -5,11 +5,56 @@ import { useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api/client";
 import {
   understanding,
+  type ChannelStatus,
   type DemoConversation,
   type DemoInboundResult,
 } from "@/lib/api/integrations";
+import { formatDate, relativeTime } from "@/lib/format";
 
 const CONNECTION_KEY = "vigie-demo-whatsapp";
+
+const DEFAULT_CHANNELS: ChannelStatus[] = [
+  {
+    provider: "whatsapp",
+    label: "WhatsApp Business",
+    description: "Monitor customer conversations and identify commitments, payment claims and requests.",
+    availability: "not_configured",
+    accountLabel: null,
+    lastSyncAt: null,
+    lastError: null,
+    configured: false,
+  },
+  {
+    provider: "gmail",
+    label: "Google Workspace",
+    description: "Analyze business email conversations.",
+    availability: "not_configured",
+    accountLabel: null,
+    lastSyncAt: null,
+    lastError: null,
+    configured: false,
+  },
+  {
+    provider: "microsoft365",
+    label: "Microsoft 365",
+    description: "Analyze Outlook business conversations.",
+    availability: "not_configured",
+    accountLabel: null,
+    lastSyncAt: null,
+    lastError: null,
+    configured: false,
+  },
+];
+
+const STATUS_LABEL: Record<ChannelStatus["availability"], string> = {
+  not_configured: "Not configured",
+  available: "Available",
+  prototype: "Prototype",
+  pending: "Pending",
+  connected: "Connected",
+  disconnected: "Disconnected",
+  error: "Error",
+};
 
 type SendInput = {
   customerName: string;
@@ -20,23 +65,40 @@ export function IntegrationsPanel({
   demoEnabled,
   initiallyConnected = false,
   recent = [],
+  channels = DEFAULT_CHANNELS,
   onSend,
   onRefresh,
+  onConnectWhatsapp,
+  onDisconnect,
+  onStartOauth,
+  onSync,
+  onEnableListening,
+  canManage = true,
 }: {
   demoEnabled: boolean;
   initiallyConnected?: boolean;
   recent?: DemoConversation[];
+  channels?: ChannelStatus[];
   onSend: (input: SendInput) => Promise<DemoInboundResult>;
   onRefresh?: () => Promise<DemoConversation[]>;
+  onConnectWhatsapp?: (phoneNumberId: string) => Promise<void>;
+  onDisconnect?: (provider: string) => Promise<void>;
+  onStartOauth?: (provider: string) => void;
+  onSync?: (provider: string) => Promise<void>;
+  onEnableListening?: (provider: string) => Promise<void>;
+  canManage?: boolean;
 }) {
   const [connected, setConnected] = useState(initiallyConnected && demoEnabled);
   const [customerName, setCustomerName] = useState("Amaka Bello");
   const [text, setText] = useState("I'll pay the remaining ₦150,000 on Friday.");
+  const [phoneNumberId, setPhoneNumberId] = useState("");
   const [messages, setMessages] = useState(recent);
   const [phase, setPhase] = useState<"idle" | "pending" | "sent" | "error">("idle");
   const [notice, setNotice] = useState<string | null>(null);
+  const [channelNotice, setChannelNotice] = useState<string | null>(null);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
 
-  async function connect() {
+  async function connectDemo() {
     if (!demoEnabled) {
       return;
     }
@@ -86,6 +148,80 @@ export function IntegrationsPanel({
     }
   }
 
+  async function connectChannel(channel: ChannelStatus) {
+    if (!channel.configured) {
+      setChannelNotice("Configuration required.");
+      return;
+    }
+    if (channel.provider === "whatsapp") {
+      if (!phoneNumberId.trim()) {
+        setChannelNotice("Enter the WhatsApp phone number ID.");
+        return;
+      }
+      if (!onConnectWhatsapp) {
+        setChannelNotice("Configuration required.");
+        return;
+      }
+      setBusyProvider(channel.provider);
+      setChannelNotice(null);
+      try {
+        await onConnectWhatsapp(phoneNumberId.trim());
+        setChannelNotice(null);
+      } catch (error) {
+        setChannelNotice(
+          error instanceof ApiError && error.status === 409
+            ? "Configuration required."
+            : "VIGIE couldn't connect that channel. Please try again.",
+        );
+      } finally {
+        setBusyProvider(null);
+      }
+      return;
+    }
+    if (!onStartOauth) {
+      setChannelNotice("Configuration required.");
+      return;
+    }
+    onStartOauth(channel.provider);
+  }
+
+  async function runChannelAction(
+    provider: string,
+    action: (() => Promise<void>) | undefined,
+    failure: string,
+    unconfigured?: string,
+  ) {
+    if (!action) {
+      return;
+    }
+    setBusyProvider(provider);
+    setChannelNotice(null);
+    try {
+      await action();
+    } catch (error) {
+      setChannelNotice(error instanceof ApiError && error.status === 409 && unconfigured ? unconfigured : failure);
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  async function disconnectChannel(channel: ChannelStatus) {
+    if (!onDisconnect) {
+      return;
+    }
+    setBusyProvider(channel.provider);
+    setChannelNotice(null);
+    try {
+      await onDisconnect(channel.provider);
+    } catch {
+      setChannelNotice("VIGIE couldn't disconnect that channel. Please try again.");
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  const realChannels = channels.filter((channel) => channel.provider !== "demo");
+
   return (
     <article className="max-w-3xl">
       <p className="text-xs font-semibold tracking-[0.22em]">VIGIE</p>
@@ -100,11 +236,13 @@ export function IntegrationsPanel({
       <div className="mt-8 grid gap-4">
         <section className="border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <h2 className="text-lg font-semibold">WhatsApp Business</h2>
-            <p className="text-[11px] font-semibold tracking-[0.14em] uppercase">Prototype</p>
+            <h2 className="text-lg font-semibold">Demo WhatsApp</h2>
+            <p className="text-[11px] font-semibold tracking-[0.14em] uppercase">
+              {demoEnabled ? "Prototype" : "Not configured"}
+            </p>
           </div>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">
-            Monitor customer conversations and identify commitments, payment claims and requests.
+            A simulated WhatsApp Business connector for local development. It is not a live WhatsApp account.
           </p>
           {connected ? (
             <p className="mt-4 text-sm font-medium">Demo connection active</p>
@@ -112,31 +250,119 @@ export function IntegrationsPanel({
             <button
               type="button"
               disabled={!demoEnabled}
-              onClick={() => void connect()}
-              className="mt-4 border border-[var(--ink)] px-3 py-2 text-sm font-medium disabled:opacity-50"
+              onClick={() => void connectDemo()}
+              className="mt-4 border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
             >
               Demo connection
             </button>
           )}
-          {connected ? (
-            <p className="mt-1 text-sm text-[var(--muted)]">Messages can now be imported into VIGIE.</p>
-          ) : null}
-          {!demoEnabled ? (
-            <p className="mt-3 text-sm text-[var(--muted)]">Available when demo mode is on.</p>
-          ) : null}
+          {connected ? <p className="mt-1 text-sm text-[var(--muted)]">Messages can now be imported into VIGIE.</p> : null}
+          {!demoEnabled ? <p className="mt-3 text-sm text-[var(--muted)]">Available when demo mode is on.</p> : null}
         </section>
 
-        <ChannelSoon
-          title="Google Workspace"
-          detail="Analyze business email conversations."
-        />
-        <ChannelSoon title="Microsoft 365" detail="Analyze Outlook business conversations." />
+        {realChannels.map((channel) => (
+          <section key={channel.provider} className="border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h2 className="text-lg font-semibold">{channel.label}</h2>
+              <p className="text-[11px] font-semibold tracking-[0.14em] uppercase">{STATUS_LABEL[channel.availability]}</p>
+            </div>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
+            {channel.accountLabel ? <p className="mt-3 text-sm">Account {channel.accountLabel}</p> : null}
+            <GmailRealtimeStatus channel={channel} />
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              {channel.lastSyncAt ? `Last activity ${formatDate(channel.lastSyncAt, "UTC")}` : "No activity yet"}
+            </p>
+            {(channel.availability === "error" || channel.realtime === "needs_attention") && channel.lastError ? (
+              <p className="mt-3 text-sm text-[var(--high)]" role="alert">
+                {channel.lastError}
+              </p>
+            ) : null}
+            {!canManage ? (
+              <p className="mt-4 text-sm text-[var(--muted)]">You do not have permission to manage integrations.</p>
+            ) : channel.availability === "connected" ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {channel.provider === "gmail" ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busyProvider === channel.provider}
+                      onClick={() =>
+                        void runChannelAction(
+                          channel.provider,
+                          onSync ? () => onSync(channel.provider) : undefined,
+                          "VIGIE couldn't sync Gmail. Please try again.",
+                        )
+                      }
+                      className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
+                    >
+                      Sync now
+                    </button>
+                    {channel.listening ? null : (
+                      <button
+                        type="button"
+                        disabled={busyProvider === channel.provider}
+                        onClick={() =>
+                          void runChannelAction(
+                            channel.provider,
+                            onEnableListening ? () => onEnableListening(channel.provider) : undefined,
+                          "Real-time listening could not be enabled.",
+                          "Real-time listening is not configured.",
+                        )
+                        }
+                        className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
+                      >
+                        Enable real-time listening
+                      </button>
+                    )}
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busyProvider === channel.provider}
+                  onClick={() => void disconnectChannel(channel)}
+                  className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4">
+                {channel.provider === "whatsapp" && channel.configured ? (
+                  <>
+                    <label className="block text-sm" htmlFor="whatsapp-phone-number">
+                      Phone number ID
+                    </label>
+                    <input
+                      id="whatsapp-phone-number"
+                      value={phoneNumberId}
+                      onChange={(event) => setPhoneNumberId(event.target.value)}
+                      className="mt-2 w-full border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink)]"
+                    />
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busyProvider === channel.provider}
+                  onClick={() => void connectChannel(channel)}
+                  className="mt-4 border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
+                >
+                  {connectLabel(channel)}
+                </button>
+              </div>
+            )}
+          </section>
+        ))}
       </div>
+      {channelNotice ? (
+        <p className="mt-4 text-sm text-[var(--high)]" role="alert">
+          {channelNotice}
+        </p>
+      ) : null}
 
       {connected ? (
         <form onSubmit={(event) => void submit(event)} className="mt-8 border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
           <h2 className="text-lg font-semibold">Send a test WhatsApp message</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">WhatsApp Business · Demo connection</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Demo WhatsApp · Prototype</p>
           <label className="mt-5 block text-sm" htmlFor="demo-customer">
             Customer
           </label>
@@ -199,14 +425,34 @@ export function IntegrationsPanel({
   );
 }
 
-function ChannelSoon({ title, detail }: { title: string; detail: string }) {
+function GmailRealtimeStatus({ channel }: { channel: ChannelStatus }) {
+  if (channel.provider !== "gmail" || channel.availability !== "connected") {
+    return null;
+  }
   return (
-    <section className="border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{detail}</p>
-      <p className="mt-4 text-sm text-[var(--muted)]">Coming soon</p>
-    </section>
+    <div className="mt-3 text-sm">
+      {channel.listening ? <p>Listening for new messages</p> : null}
+      {channel.realtime === "manual" ? <p>Manual sync available</p> : null}
+      {channel.realtime === "manual" && !channel.pubsubConfigured ? <p>Real-time listening: Not configured</p> : null}
+      {channel.realtime === "needs_attention" ? <p>Needs attention</p> : null}
+      {channel.lastNotificationAt ? (
+        <p className="text-[var(--muted)]">Last received: {relativeTime(channel.lastNotificationAt, new Date())}</p>
+      ) : null}
+    </div>
   );
+}
+
+function connectLabel(channel: ChannelStatus): string {
+  if (channel.provider === "whatsapp") {
+    return "Connect WhatsApp";
+  }
+  if (channel.provider === "gmail") {
+    return channel.availability === "error" || channel.availability === "disconnected" ? "Reconnect" : "Connect Google";
+  }
+  if (channel.provider === "microsoft365") {
+    return "Connect Microsoft";
+  }
+  return "Connect";
 }
 
 export function readDemoConnection(): boolean {

@@ -18,7 +18,7 @@ export class MissingBusinessError extends Error {
 export async function apiGet<T>(path: string, parse: (value: unknown) => T): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, { cache: "no-store" });
+    response = await fetch(path, { cache: "no-store", credentials: "include" });
   } catch {
     throw new ApiError();
   }
@@ -41,6 +41,7 @@ export async function apiPost<T>(path: string, body: unknown, parse: (value: unk
     response = await fetch(path, {
       method: "POST",
       cache: "no-store",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.auth.deps import Principal, require_member
 from app.core.database import get_db
 from app.domain.errors import NotFoundError
 from app.schemas.evaluation import EvaluationRead, EvaluationRunRequest
@@ -12,8 +13,10 @@ router = APIRouter(prefix="/api")
 @router.post("/evaluations/run", response_model=EvaluationRead)
 def post_run_evaluation(
     payload: EvaluationRunRequest,
+    principal: Principal = Depends(require_member),
     session: Session = Depends(get_db),
 ) -> EvaluationRead:
+    del principal
     try:
         return run_evaluation(session, payload.business_id, payload.reference_time)
     except NotFoundError as exc:

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.factory import build_ai_provider
 from app.ai.provider import AIProvider
+from app.auth.deps import Principal, require_member
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.domain.errors import AIProviderError, InvalidProposalError, NotFoundError
@@ -25,9 +26,11 @@ def get_configured_provider() -> AIProvider:
 def post_analyze_message(
     message_id: uuid.UUID,
     payload: AnalyzeMessageRequest,
+    principal: Principal = Depends(require_member),
     session: Session = Depends(get_db),
     provider: AIProvider = Depends(get_configured_provider),
 ) -> AnalysisRead:
+    del principal
     try:
         return analyze_stored_message(
             session,

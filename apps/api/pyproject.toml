@@ -11,6 +11,9 @@ dependencies = [
     "psycopg[binary]>=3.2.3",
     "alembic>=1.14.0",
     "httpx>=0.28.1",
+    "cryptography>=44.0.0",
+    "google-auth>=2.36.0",
+    "requests>=2.32.0",
 ]
 
 [project.optional-dependencies]

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
+import { DemoEntry } from "@/components/demo-entry";
 
 export const metadata: Metadata = {
   title: "Demo",
@@ -44,11 +44,8 @@ export default function DemoPage() {
           </p>
           <p className="mt-3 text-sm leading-6">&ldquo;Good morning.&rdquo; does not create a signal.</p>
         </section>
-        <p className="mt-8 text-sm">
-          <Link href="/" className="font-medium underline-offset-4 hover:underline">
-            Open the Command Center
-          </Link>
-        </p>
+        <DemoEntry />
+        <p className="mt-4 text-sm text-[var(--muted)]">Try Demo opens the seeded Adaeze Wears story. Sign In is for your own business.</p>
       </article>
     </AppShell>
   );

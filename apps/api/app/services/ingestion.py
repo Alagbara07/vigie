@@ -125,12 +125,16 @@ def _conversation(session: Session, incoming: NormalizedMessage, customer: Custo
     return conversation
 
 
+_CHANNEL_FOR_SOURCE = {
+    MessageSource.WHATSAPP: Channel.WHATSAPP,
+    MessageSource.GMAIL: Channel.EMAIL,
+    MessageSource.MICROSOFT365: Channel.EMAIL,
+    MessageSource.DEMO: Channel.DEMO,
+}
+
+
 def _channel(source: MessageSource) -> Channel:
-    if source is MessageSource.WHATSAPP:
-        return Channel.WHATSAPP
-    if source in (MessageSource.GMAIL, MessageSource.MICROSOFT365):
-        return Channel.EMAIL
-    return Channel.DEMO
+    return _CHANNEL_FOR_SOURCE[source]
 
 
 def _contact(incoming: NormalizedMessage) -> str:

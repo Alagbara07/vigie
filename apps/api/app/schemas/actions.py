@@ -34,6 +34,7 @@ class ActionRead(BaseModel):
     proposed_content: str | None
     status: str
     approved_at: datetime | None
+    approved_by_user_id: uuid.UUID | None = None
     rejected_at: datetime | None
     executed_at: datetime | None
     created_at: datetime

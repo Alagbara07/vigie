@@ -79,13 +79,19 @@ def get_action(session: Session, action_id: uuid.UUID, business_id: uuid.UUID) -
     return _read(session, _require_action(session, action_id, business_id))
 
 
-def approve_action(session: Session, action_id: uuid.UUID, business_id: uuid.UUID) -> ActionRead:
+def approve_action(
+    session: Session,
+    action_id: uuid.UUID,
+    business_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
+) -> ActionRead:
     """Record the owner's approval. This does not contact the customer."""
     action = _require_action(session, action_id, business_id)
     if action.status != ActionStatus.PROPOSED.value:
         raise ConflictError("Only a proposed action can be approved.")
     action.status = ActionStatus.APPROVED.value
     action.approved_at = _decision_time()
+    action.approved_by_user_id = user_id
     session.commit()
     logger.info("Approved action %s for business %s", action.id, business_id)
     return _read(session, action)
@@ -206,6 +212,7 @@ def _read(session: Session, action: Action) -> ActionRead:
         proposed_content=action.proposed_content,
         status=action.status,
         approved_at=action.approved_at,
+        approved_by_user_id=action.approved_by_user_id,
         rejected_at=action.rejected_at,
         executed_at=action.executed_at,
         created_at=action.created_at,

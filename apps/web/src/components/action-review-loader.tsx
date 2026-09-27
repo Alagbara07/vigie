@@ -6,7 +6,9 @@ import { useParams, useSearchParams } from "next/navigation";
 import { ActionReview } from "@/components/action-review";
 import { AppShell } from "@/components/app-shell";
 import { DetailSkeleton, ErrorNotice } from "@/components/states";
+import { canApprove } from "@/lib/access";
 import { approveAction, loadAction, rejectAction, type ActionRecord } from "@/lib/api/actions";
+import { loadSession } from "@/lib/api/auth";
 
 export function ActionReviewLoader() {
   const params = useParams<{ actionId: string }>();
@@ -14,7 +16,7 @@ export function ActionReviewLoader() {
   const businessId = searchParams.get("business_id");
   const actionId = params.actionId;
   const [state, setState] = useState<
-    { phase: "loading" } | { phase: "error" } | { phase: "ready"; action: ActionRecord }
+    { phase: "loading" } | { phase: "error" } | { phase: "ready"; action: ActionRecord; canDecide: boolean }
   >({ phase: "loading" });
 
   const load = useCallback(async () => {
@@ -24,8 +26,9 @@ export function ActionReviewLoader() {
     }
     setState({ phase: "loading" });
     try {
-      const action = await loadAction(actionId, businessId);
-      setState({ phase: "ready", action });
+      const [action, session] = await Promise.all([loadAction(actionId, businessId), loadSession()]);
+      const membership = session.businesses.find((business) => business.id === businessId);
+      setState({ phase: "ready", action, canDecide: canApprove(membership?.role) });
     } catch {
       setState({ phase: "error" });
     }
@@ -52,6 +55,7 @@ export function ActionReviewLoader() {
       {state.phase === "ready" ? (
         <ActionReview
           action={state.action}
+          canDecide={state.canDecide}
           onApprove={async () => {
             await approveAction(state.action.id, state.action.business_id);
           }}

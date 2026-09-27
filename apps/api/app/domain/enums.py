@@ -25,6 +25,20 @@ class MessageSource(StrEnum):
     DEMO = "demo"
 
 
+class IntegrationProvider(StrEnum):
+    WHATSAPP = "whatsapp"
+    GMAIL = "gmail"
+    MICROSOFT365 = "microsoft365"
+    DEMO = "demo"
+
+
+class ConnectionStatus(StrEnum):
+    PENDING = "pending"
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    ERROR = "error"
+
+
 class ConversationStatus(StrEnum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
@@ -160,3 +174,9 @@ class ActionStatus(StrEnum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     EXECUTED = "EXECUTED"
+
+
+class MemberRole(StrEnum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"

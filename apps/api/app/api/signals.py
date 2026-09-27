@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.auth.deps import Principal, require_member
 from app.core.database import get_db
 from app.domain.enums import Severity, SignalCategory, SignalStatus, SignalType
 from app.domain.errors import NotFoundError
@@ -19,8 +20,10 @@ def get_signals(
     signal_type: SignalType | None = None,
     category: SignalCategory | None = None,
     severity: Severity | None = None,
+    principal: Principal = Depends(require_member),
     session: Session = Depends(get_db),
 ) -> list[SignalListRead]:
+    del principal
     try:
         return list_signal_reads(
             session,
@@ -38,8 +41,10 @@ def get_signals(
 def get_signal_by_id(
     signal_id: uuid.UUID,
     business_id: uuid.UUID = Query(),
+    principal: Principal = Depends(require_member),
     session: Session = Depends(get_db),
 ) -> SignalDetailRead:
+    del principal
     try:
         return get_signal_detail(session, signal_id, business_id)
     except NotFoundError as exc:

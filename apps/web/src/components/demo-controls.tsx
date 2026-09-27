@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { loadSession } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { loadDemoMode, resetDemo, runDemo } from "@/lib/api/system";
 
@@ -11,8 +12,8 @@ export function DemoControlsLoader() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadDemoMode()
-        .then((mode) => setEnabled(mode.enabled))
+      void Promise.all([loadDemoMode(), loadSession().catch(() => null)])
+        .then(([mode, session]) => setEnabled(mode.enabled && session !== null))
         .catch(() => setEnabled(false));
     }, 0);
     return () => window.clearTimeout(timer);

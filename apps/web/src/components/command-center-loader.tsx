@@ -6,8 +6,8 @@ import { AppShell } from "@/components/app-shell";
 import { CommandCenter } from "@/components/command-center";
 import { DashboardSkeleton, ErrorNotice, MissingBusiness } from "@/components/states";
 import { recommendActions } from "@/lib/api/actions";
-import { loadDemoBusiness } from "@/lib/api/businesses";
-import { ApiError, MissingBusinessError } from "@/lib/api/client";
+import { loadSession } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
 import { loadDashboardSummary, type DashboardSummary } from "@/lib/api/dashboard";
 import { loadSignals, type SignalRecord } from "@/lib/api/signals";
 
@@ -20,7 +20,12 @@ export function CommandCenterLoader() {
   const load = useCallback(async () => {
     setState({ phase: "loading" });
     try {
-      const business = await loadDemoBusiness();
+      const session = await loadSession();
+      const business = session.current_business;
+      if (!business) {
+        setState({ phase: "missing" });
+        return;
+      }
       await recommendActions(business.id);
       const [summary, signals] = await Promise.all([
         loadDashboardSummary(business.id),
@@ -28,10 +33,6 @@ export function CommandCenterLoader() {
       ]);
       setState({ phase: "ready", summary, signals });
     } catch (error) {
-      if (error instanceof MissingBusinessError) {
-        setState({ phase: "missing" });
-        return;
-      }
       if (error instanceof ApiError || error instanceof Error) {
         setState({ phase: "error" });
       }

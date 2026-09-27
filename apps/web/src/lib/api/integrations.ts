@@ -86,6 +86,65 @@ function parseDemoResult(value: unknown): DemoInboundResult {
   };
 }
 
+export type ChannelAvailability =
+  | "not_configured"
+  | "available"
+  | "prototype"
+  | "pending"
+  | "connected"
+  | "disconnected"
+  | "error";
+
+export type GmailRealtime = "listening" | "manual" | "needs_attention" | "not_configured";
+
+export type ChannelStatus = {
+  provider: string;
+  label: string;
+  description: string;
+  availability: ChannelAvailability;
+  accountLabel: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  configured: boolean;
+  listening?: boolean;
+  realtime?: GmailRealtime;
+  lastNotificationAt?: string | null;
+  pubsubConfigured?: boolean;
+};
+
+export function loadChannels(businessId: string): Promise<ChannelStatus[]> {
+  return apiGet(`/api/integrations?business_id=${businessId}`, parseChannels);
+}
+
+export function connectWhatsapp(businessId: string, phoneNumberId: string): Promise<ChannelStatus> {
+  return apiPost(
+    "/api/integrations/whatsapp/connect",
+    { business_id: businessId, phone_number_id: phoneNumberId },
+    parseChannel,
+  );
+}
+
+export function disconnectChannel(businessId: string, provider: string): Promise<ChannelStatus> {
+  return apiPost(`/api/integrations/${provider}/disconnect`, { business_id: businessId }, parseChannel);
+}
+
+export function syncGmail(businessId: string): Promise<void> {
+  return apiPost(`/api/integrations/gmail/sync?business_id=${encodeURIComponent(businessId)}`, {}, () => undefined);
+}
+
+export function enableGmailListening(businessId: string): Promise<ChannelStatus> {
+  return apiPost(
+    `/api/integrations/gmail/watch?business_id=${encodeURIComponent(businessId)}`,
+    {},
+    parseChannel,
+  );
+}
+
+export function oauthConnectPath(provider: string, businessId: string): string {
+  const route = provider === "microsoft365" ? "microsoft" : provider;
+  return `/api/integrations/${route}/connect?business_id=${businessId}`;
+}
+
 function parseDemoList(value: unknown): DemoConversation[] {
   if (!Array.isArray(value)) {
     throw new Error("Expected demo messages");
@@ -104,4 +163,39 @@ function parseDemoList(value: unknown): DemoConversation[] {
       events: item.events.filter((event): event is string => typeof event === "string"),
     };
   });
+}
+
+function parseChannels(value: unknown): ChannelStatus[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Expected channels");
+  }
+  return value.map(parseChannel);
+}
+
+function parseChannel(value: unknown): ChannelStatus {
+  if (!isRecord(value)) {
+    throw new Error("Expected a channel");
+  }
+  const availability = requiredString(value, "availability");
+  return {
+    provider: requiredString(value, "provider"),
+    label: requiredString(value, "label"),
+    description: requiredString(value, "description"),
+    availability: availability as ChannelAvailability,
+    accountLabel: typeof value.account_label === "string" ? value.account_label : null,
+    lastSyncAt: typeof value.last_sync_at === "string" ? value.last_sync_at : null,
+    lastError: typeof value.last_error === "string" ? value.last_error : null,
+    configured: value.configured === true,
+    listening: value.listening === true,
+    realtime: realtimeValue(value.realtime),
+    lastNotificationAt: typeof value.last_notification_at === "string" ? value.last_notification_at : null,
+    pubsubConfigured: value.pubsub_configured === true,
+  };
+}
+
+function realtimeValue(value: unknown): GmailRealtime {
+  if (value === "listening" || value === "manual" || value === "needs_attention" || value === "not_configured") {
+    return value;
+  }
+  return "not_configured";
 }

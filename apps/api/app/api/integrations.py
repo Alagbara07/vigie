@@ -3,15 +3,15 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.ai.factory import build_ai_provider
+from app.auth.deps import Principal, require_member
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.domain.enums import MessageSource, SenderType
 from app.domain.errors import AIProviderError, InvalidProposalError, NotFoundError
 from app.integrations.messages import NormalizedMessage, describe_source
 from app.schemas.integrations import DemoMessageCreate, DemoMessageListItem, DemoMessageRead
-from app.services.analysis import analyze_stored_message
 from app.services.ingestion import event_types_for, ingest_message, list_demo_messages
+from app.services.intake import schedule_message_analysis
 
 router = APIRouter(prefix="/api")
 
@@ -25,8 +25,10 @@ def require_demo_mode() -> None:
 def post_demo_message(
     payload: DemoMessageCreate,
     _: None = Depends(require_demo_mode),
+    principal: Principal = Depends(require_member),
     session: Session = Depends(get_db),
 ) -> DemoMessageRead:
+    del principal
     incoming = NormalizedMessage(
         business_id=payload.business_id,
         source=MessageSource.DEMO,
@@ -43,12 +45,11 @@ def post_demo_message(
         events = event_types_for(session, stored.message)
         analyzed = False
         if stored.created:
-            analysis = analyze_stored_message(
+            analysis = schedule_message_analysis(
                 session,
                 stored.message.id,
                 stored.message.business_id,
                 payload.timestamp,
-                build_ai_provider(get_settings()),
             )
             events = [event.event_type for event in analysis.events]
             analyzed = True
@@ -79,8 +80,10 @@ def post_demo_message(
 def get_demo_messages(
     business_id: uuid.UUID = Query(),
     _: None = Depends(require_demo_mode),
+    principal: Principal = Depends(require_member),
     session: Session = Depends(get_db),
 ) -> list[DemoMessageListItem]:
+    del principal
     try:
         rows = list_demo_messages(session, business_id)
     except NotFoundError as exc:

@@ -16,3 +16,7 @@ class InvalidProposalError(DomainError):
 
 class AIProviderError(DomainError):
     """The configured AI provider cannot analyze a message."""
+
+
+class ProviderError(DomainError):
+    """A communication provider could not complete a connection or delivery."""

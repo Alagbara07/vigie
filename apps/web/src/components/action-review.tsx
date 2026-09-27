@@ -15,10 +15,12 @@ export function ActionReview({
   action,
   onApprove,
   onReject,
+  canDecide = true,
 }: {
   action: ActionRecord;
   onApprove: () => Promise<void>;
   onReject: () => Promise<void>;
+  canDecide?: boolean;
 }) {
   const [phase, setPhase] = useState<ReviewPhase>(startingPhase(action.status));
   const amount =
@@ -110,7 +112,10 @@ export function ActionReview({
         </section>
       ) : null}
 
-      {phase === "idle" || phase === "pending" || phase === "error" ? (
+      {!canDecide && (phase === "idle" || phase === "pending" || phase === "error") ? (
+        <p className="mt-8 text-sm text-[var(--muted)]">You do not have permission to approve actions for this business.</p>
+      ) : null}
+      {canDecide && (phase === "idle" || phase === "pending" || phase === "error") ? (
         <div className="mt-8 flex flex-wrap gap-3">
           <button
             type="button"
