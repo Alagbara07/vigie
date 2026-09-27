@@ -1,0 +1,3 @@
+# Render's default Python build runs: pip install -r requirements.txt
+# Versions stay in pyproject.toml. This installs that project.
+.

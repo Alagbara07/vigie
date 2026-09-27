@@ -60,7 +60,7 @@ Connect the GitHub repository yourself. Applying `render.yaml` is a dashboard st
 | Name | `vigie-api` |
 | Root directory | `apps/api` |
 | Runtime | Python 3.11 (`runtime.txt`) |
-| Build | `pip install .` |
+| Build | `pip install .` from `apps/api`. `pip install -r requirements.txt` installs the same project because `requirements.txt` points at `pyproject.toml`. |
 | Pre-deploy | `alembic upgrade head` |
 | Start | `python -m app` |
 | Health check | `GET /api/health` |

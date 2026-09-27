@@ -9,6 +9,10 @@ Requires-Dist: pydantic-settings>=2.7.0
 Requires-Dist: sqlalchemy>=2.0.36
 Requires-Dist: psycopg[binary]>=3.2.3
 Requires-Dist: alembic>=1.14.0
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: cryptography>=44.0.0
+Requires-Dist: google-auth>=2.36.0
+Requires-Dist: requests>=2.32.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3.4; extra == "dev"
 Requires-Dist: httpx>=0.28.1; extra == "dev"

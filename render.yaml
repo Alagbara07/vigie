@@ -9,6 +9,7 @@ services:
     name: vigie-api
     runtime: python
     rootDir: apps/api
+    # Prefer this. `pip install -r requirements.txt` also works: that file installs this project.
     buildCommand: pip install .
     preDeployCommand: alembic upgrade head
     startCommand: python -m app
@@ -76,6 +77,7 @@ services:
     runtime: python
     rootDir: apps/api
     schedule: "0 6 * * *"
+    # Prefer this. `pip install -r requirements.txt` also works: that file installs this project.
     buildCommand: pip install .
     startCommand: python -m app.jobs.renew_gmail_watches
     envVars:
