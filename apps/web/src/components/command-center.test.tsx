@@ -105,7 +105,7 @@ describe("command center", () => {
     );
 
     expect(screen.getByRole("heading", { name: "You're all caught up." })).toBeInTheDocument();
-    expect(screen.getByText("VIGIE isn't seeing anything that requires your attention right now.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing needs your attention right now.")).toBeInTheDocument();
   });
 
   it("renders a recommendation on the signal that has one", () => {
@@ -132,7 +132,7 @@ describe("command center", () => {
     expect(screen.getByText("Recommended")).toBeInTheDocument();
     expect(screen.getByText("Proposed")).toBeInTheDocument();
     expect(screen.getByText("Follow up with Amaka about the overdue ₦150,000 payment.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Review" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Review recommendation" })).toHaveAttribute(
       "href",
       "/actions/action-1?business_id=business-1",
     );
@@ -221,7 +221,7 @@ describe("signal detail", () => {
 
     expect(screen.getByText("WhatsApp Business")).toBeInTheDocument();
     expect(screen.getByText("Demo connection")).toBeInTheDocument();
-    expect(screen.getByText("External message demo-wa-001")).toBeInTheDocument();
+    expect(screen.queryByText("External message demo-wa-001")).not.toBeInTheDocument();
     expect(screen.queryByText("WhatsApp Connected")).not.toBeInTheDocument();
   });
 
@@ -257,7 +257,7 @@ describe("signal detail", () => {
     expect(evidence.compareDocumentPosition(recommendation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Follow up with Amaka about the overdue ₦150,000 payment.")).toBeInTheDocument();
     expect(screen.getByText("Proposed")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Review" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Review recommendation" })).toHaveAttribute(
       "href",
       "/actions/action-1?business_id=business-1",
     );
@@ -268,14 +268,14 @@ describe("signal detail", () => {
 describe("loading and error states", () => {
   it("uses a skeleton while the command center is loading", () => {
     render(<DashboardSkeleton />);
-    expect(screen.getByText("Checking what needs attention")).toBeInTheDocument();
+    expect(screen.getByText("Looking for what needs your attention")).toBeInTheDocument();
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
   });
 
   it("explains a failed load without a raw server error", () => {
     render(<ErrorNotice onRetry={() => undefined} />);
     expect(screen.getByRole("heading", { name: "VIGIE couldn't load your signals." })).toBeInTheDocument();
-    expect(screen.getByText("Please try again.")).toBeInTheDocument();
+    expect(screen.getByText("Try again.")).toBeInTheDocument();
     expect(screen.queryByText(/500/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });

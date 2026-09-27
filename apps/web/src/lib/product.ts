@@ -51,12 +51,12 @@ export function whyRecommendation(signal: {
 }): string {
   if (signal.signal_type === "OVERDUE_PAYMENT" && signal.financial_impact_amount && signal.currency) {
     const amount = formatMoney(signal.financial_impact_amount, signal.currency);
-    return `This recommendation was generated because a ${amount} payment commitment is overdue.`;
+    return `VIGIE suggests this because a ${amount} payment commitment is overdue.`;
   }
   if (signal.signal_type === "UNANSWERED_REQUEST") {
-    return "This recommendation was generated because a customer request is still waiting for a reply.";
+    return "VIGIE suggests this because a customer request is still waiting for a reply.";
   }
-  return signal.description ?? "Recommended from the signal already on this record.";
+  return signal.description ?? "Suggested from what VIGIE already found in this conversation.";
 }
 
 export function detectedAs(eventType: string): string {
@@ -104,21 +104,21 @@ export function stateLabel(status: string): string {
 export function reachedSteps(signalType: string): string[] {
   if (signalType === "OVERDUE_PAYMENT") {
     return [
-      "Conversation interpreted",
-      "Business commitment identified",
-      "Commitment tracked over time",
+      "Conversation read",
+      "Payment commitment found",
+      "Commitment watched over time",
       "Deadline passed",
-      "Signal generated",
+      "Flagged for your attention",
     ];
   }
   if (signalType === "UNANSWERED_REQUEST") {
     return [
-      "Conversation interpreted",
-      "Customer request detected",
+      "Conversation read",
+      "Customer request found",
       "Waiting for a reply",
       "Reply window passed",
-      "Signal generated",
+      "Flagged for your attention",
     ];
   }
-  return ["Conversation interpreted", "Something that needs attention was detected", "Signal generated"];
+  return ["Conversation read", "Something that needs attention was found", "Flagged for your attention"];
 }

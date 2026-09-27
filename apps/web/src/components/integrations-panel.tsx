@@ -10,6 +10,7 @@ import {
   type DemoInboundResult,
 } from "@/lib/api/integrations";
 import { formatDate, relativeTime } from "@/lib/format";
+import { channelStatusLabel, channelStatusTone, connectedAccountLine, userFacingError } from "@/lib/ux";
 
 const CONNECTION_KEY = "vigie-demo-whatsapp";
 
@@ -45,16 +46,6 @@ const DEFAULT_CHANNELS: ChannelStatus[] = [
     configured: false,
   },
 ];
-
-const STATUS_LABEL: Record<ChannelStatus["availability"], string> = {
-  not_configured: "Not configured",
-  available: "Available",
-  prototype: "Prototype",
-  pending: "Pending",
-  connected: "Connected",
-  disconnected: "Disconnected",
-  error: "Error",
-};
 
 type SendInput = {
   customerName: string;
@@ -96,7 +87,9 @@ export function IntegrationsPanel({
   const [phase, setPhase] = useState<"idle" | "pending" | "sent" | "error">("idle");
   const [notice, setNotice] = useState<string | null>(null);
   const [channelNotice, setChannelNotice] = useState<string | null>(null);
-  const [busyProvider, setBusyProvider] = useState<string | null>(null);
+  const [busy, setBusy] = useState<{ provider: string; action: "connect" | "sync" | "disconnect" | "listen" } | null>(
+    null,
+  );
 
   async function connectDemo() {
     if (!demoEnabled) {
@@ -121,7 +114,7 @@ export function IntegrationsPanel({
     try {
       const result = await onSend({ customerName: customerName.trim(), text: text.trim() });
       setPhase("sent");
-      setNotice("Message received. VIGIE is analyzing the conversation.");
+      setNotice("Message received. Analyzing the conversation...");
       if (onRefresh) {
         setMessages(await onRefresh());
       } else {
@@ -143,14 +136,14 @@ export function IntegrationsPanel({
       setNotice(
         error instanceof ApiError && error.status === 404
           ? "The demo connector is not available."
-          : "VIGIE couldn't receive that message. Please try again.",
+          : "VIGIE couldn't receive that message. Try again.",
       );
     }
   }
 
   async function connectChannel(channel: ChannelStatus) {
     if (!channel.configured) {
-      setChannelNotice("Configuration required.");
+      setChannelNotice("This channel is not set up yet.");
       return;
     }
     if (channel.provider === "whatsapp") {
@@ -159,10 +152,10 @@ export function IntegrationsPanel({
         return;
       }
       if (!onConnectWhatsapp) {
-        setChannelNotice("Configuration required.");
+        setChannelNotice("This channel is not set up yet.");
         return;
       }
-      setBusyProvider(channel.provider);
+      setBusy({ provider: channel.provider, action: "connect" });
       setChannelNotice(null);
       try {
         await onConnectWhatsapp(phoneNumberId.trim());
@@ -170,16 +163,16 @@ export function IntegrationsPanel({
       } catch (error) {
         setChannelNotice(
           error instanceof ApiError && error.status === 409
-            ? "Configuration required."
-            : "VIGIE couldn't connect that channel. Please try again.",
+            ? "This channel is not set up yet."
+            : "VIGIE couldn't connect WhatsApp. Try again.",
         );
       } finally {
-        setBusyProvider(null);
+        setBusy(null);
       }
       return;
     }
     if (!onStartOauth) {
-      setChannelNotice("Configuration required.");
+      setChannelNotice("This channel is not set up yet.");
       return;
     }
     onStartOauth(channel.provider);
@@ -189,19 +182,20 @@ export function IntegrationsPanel({
     provider: string,
     action: (() => Promise<void>) | undefined,
     failure: string,
+    kind: "sync" | "listen",
     unconfigured?: string,
   ) {
     if (!action) {
       return;
     }
-    setBusyProvider(provider);
+    setBusy({ provider, action: kind });
     setChannelNotice(null);
     try {
       await action();
     } catch (error) {
       setChannelNotice(error instanceof ApiError && error.status === 409 && unconfigured ? unconfigured : failure);
     } finally {
-      setBusyProvider(null);
+      setBusy(null);
     }
   }
 
@@ -209,14 +203,14 @@ export function IntegrationsPanel({
     if (!onDisconnect) {
       return;
     }
-    setBusyProvider(channel.provider);
+    setBusy({ provider: channel.provider, action: "disconnect" });
     setChannelNotice(null);
     try {
       await onDisconnect(channel.provider);
     } catch {
-      setChannelNotice("VIGIE couldn't disconnect that channel. Please try again.");
+      setChannelNotice("VIGIE couldn't disconnect that channel. Try again.");
     } finally {
-      setBusyProvider(null);
+      setBusy(null);
     }
   }
 
@@ -242,7 +236,7 @@ export function IntegrationsPanel({
             </p>
           </div>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">
-            A simulated WhatsApp Business connector for local development. It is not a live WhatsApp account.
+            A practice inbox for demonstrations. It is not a live WhatsApp account.
           </p>
           {connected ? (
             <p className="mt-4 text-sm font-medium">Demo connection active</p>
@@ -257,27 +251,29 @@ export function IntegrationsPanel({
             </button>
           )}
           {connected ? <p className="mt-1 text-sm text-[var(--muted)]">Messages can now be imported into VIGIE.</p> : null}
-          {!demoEnabled ? <p className="mt-3 text-sm text-[var(--muted)]">Available when demo mode is on.</p> : null}
+          {!demoEnabled ? (
+            <p className="mt-3 text-sm text-[var(--muted)]">The demo is turned off for this workspace.</p>
+          ) : null}
         </section>
 
         {realChannels.map((channel) => (
           <section key={channel.provider} className="border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <h2 className="text-lg font-semibold">{channel.label}</h2>
-              <p className="text-[11px] font-semibold tracking-[0.14em] uppercase">{STATUS_LABEL[channel.availability]}</p>
+              <p className={`text-[11px] font-semibold tracking-[0.14em] uppercase ${statusClass(channel, busy)}`}>
+                {visibleStatus(channel, busy)}
+              </p>
             </div>
             <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
             <WhatsAppSetup channel={channel} />
             <GmailSetup channel={channel} />
             <MicrosoftSetup channel={channel} />
-            {channel.accountLabel ? <p className="mt-3 text-sm">Account {channel.accountLabel}</p> : null}
+            {connectedAccountLine(channel) ? <p className="mt-3 text-sm">{connectedAccountLine(channel)}</p> : null}
             <GmailRealtimeStatus channel={channel} />
-            <p className="mt-2 text-sm text-[var(--muted)]">
-              {channel.lastSyncAt ? `Last activity ${formatDate(channel.lastSyncAt, "UTC")}` : "No activity yet"}
-            </p>
+            <p className="mt-2 text-sm text-[var(--muted)]">{activityCopy(channel)}</p>
             {(channel.availability === "error" || channel.realtime === "needs_attention") && channel.lastError ? (
               <p className="mt-3 text-sm text-[var(--high)]" role="alert">
-                {channel.lastError}
+                {userFacingError(channel.lastError)}
               </p>
             ) : null}
             {!canManage ? (
@@ -287,14 +283,15 @@ export function IntegrationsPanel({
                 {channel.provider === "gmail" || channel.provider === "microsoft365" ? (
                   <button
                     type="button"
-                    disabled={busyProvider === channel.provider}
+                    disabled={busy?.provider === channel.provider}
                     onClick={() =>
                       void runChannelAction(
                         channel.provider,
                         onSync ? () => onSync(channel.provider) : undefined,
                         channel.provider === "microsoft365"
-                          ? "VIGIE couldn't sync Microsoft 365. Please try again."
-                          : "VIGIE couldn't sync Gmail. Please try again.",
+                          ? "VIGIE couldn't sync Outlook. Try again."
+                          : "VIGIE couldn't sync Gmail. Try again.",
+                        "sync",
                       )
                     }
                     className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
@@ -307,25 +304,26 @@ export function IntegrationsPanel({
                     {channel.listening ? null : (
                       <button
                         type="button"
-                        disabled={busyProvider === channel.provider}
+                        disabled={busy?.provider === channel.provider}
                         onClick={() =>
                           void runChannelAction(
                             channel.provider,
                             onEnableListening ? () => onEnableListening(channel.provider) : undefined,
-                          "Real-time listening could not be enabled.",
-                          "Real-time listening is not configured.",
-                        )
+                            "Automatic updates could not be turned on. Try again.",
+                            "listen",
+                            "Automatic updates are not set up. Sync now still imports mail.",
+                          )
                         }
                         className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
                       >
-                        Enable real-time listening
+                        Turn on automatic updates
                       </button>
                     )}
                   </>
                 ) : null}
                 <button
                   type="button"
-                  disabled={busyProvider === channel.provider}
+                  disabled={busy?.provider === channel.provider}
                   onClick={() => void disconnectChannel(channel)}
                   className="border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
                 >
@@ -349,7 +347,7 @@ export function IntegrationsPanel({
                 ) : null}
                 <button
                   type="button"
-                  disabled={busyProvider === channel.provider}
+                  disabled={busy?.provider === channel.provider}
                   onClick={() => void connectChannel(channel)}
                   className="mt-4 border border-[var(--ink)] bg-[var(--panel)] px-3 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
                 >
@@ -410,7 +408,9 @@ export function IntegrationsPanel({
             Recent conversations
           </h2>
           {messages.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--muted)]">No demo messages yet.</p>
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              No demo messages yet. Send one to see how VIGIE reads a conversation.
+            </p>
           ) : (
             <ol className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">
               {messages.map((message) => (
@@ -439,21 +439,32 @@ function WhatsAppSetup({ channel }: { channel: ChannelStatus }) {
   if (!channel.configured) {
     return (
       <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-        Meta credentials are not set on the API. WhatsApp stays not configured until the app secret, verify token, and
-        access token exist. That does not connect a number.
+        WhatsApp is not set up for this workspace yet. That does not connect a number.
       </p>
+    );
+  }
+  if (channel.availability === "connected") {
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        VIGIE receives messages from this number. It does not send a reply.
+      </p>
+    );
+  }
+  if (channel.availability === "error") {
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Reconnect your WhatsApp number.</p>
     );
   }
   return (
     <div className="mt-3 text-sm leading-6 text-[var(--muted)]">
       <p>
-        In the Meta app, set the callback to the webhook and subscribe to messages. Then enter the phone number ID from
-        that WhatsApp Business account. VIGIE only receives messages. It does not send a reply.
+        Enter the phone number ID from your WhatsApp Business account. VIGIE receives messages. It does not send a
+        reply.
       </p>
       {channel.webhookUrl ? (
         <p className="mt-2 break-all font-medium text-[var(--ink)]">{channel.webhookUrl}</p>
       ) : (
-        <p className="mt-2">The public API origin is not set, so the callback URL cannot be shown yet.</p>
+        <p className="mt-2">The callback address is not available yet.</p>
       )}
     </div>
   );
@@ -466,22 +477,23 @@ function MicrosoftSetup({ channel }: { channel: ChannelStatus }) {
   if (!channel.configured) {
     return (
       <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-        Microsoft Entra credentials are not set on the API. Microsoft 365 stays not configured until a client id,
-        client secret, tenant, and redirect URI exist.
+        Microsoft 365 is not set up for this workspace yet.
       </p>
     );
   }
   if (channel.availability === "connected") {
     return (
       <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-        Sync now reads recent Outlook mail for this business. VIGIE does not send email.
+        Sync now imports recent Outlook mail. VIGIE does not send email.
       </p>
     );
   }
+  if (channel.availability === "error") {
+    return <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Reconnect your Microsoft account.</p>;
+  }
   return (
     <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-      Connect Microsoft starts OAuth. Microsoft returns the mailbox to the API. VIGIE stores that mailbox for this
-      business and does not send email.
+      Connect Microsoft to bring an Outlook mailbox into this business. VIGIE does not send email.
     </p>
   );
 }
@@ -492,19 +504,22 @@ function GmailSetup({ channel }: { channel: ChannelStatus }) {
   }
   if (!channel.configured) {
     return (
-      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-        Google OAuth is not configured on the API. Gmail stays not configured until a client id, client secret, and
-        redirect URI exist.
-      </p>
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Gmail is not set up for this workspace yet.</p>
     );
   }
   if (channel.availability === "connected") {
-    return null;
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        Sync now imports recent Gmail. VIGIE does not send email.
+      </p>
+    );
+  }
+  if (channel.availability === "error") {
+    return <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Reconnect your Google account.</p>;
   }
   return (
     <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-      Connect Google starts OAuth. Google returns the mailbox to the API. VIGIE stores that mailbox for this business
-      and does not send email.
+      Connect Google to bring a Gmail mailbox into this business. VIGIE does not send email.
     </p>
   );
 }
@@ -516,14 +531,8 @@ function GmailRealtimeStatus({ channel }: { channel: ChannelStatus }) {
   return (
     <div className="mt-3 text-sm">
       {channel.listening ? <p>Listening for new messages</p> : null}
-      {channel.realtime === "manual" ? <p>Manual sync available</p> : null}
-      {channel.realtime === "manual" && !channel.pubsubConfigured ? <p>Real-time listening: Not configured</p> : null}
-      {channel.realtime === "needs_attention" ? (
-        <>
-          <p>Needs attention</p>
-          <p>The Gmail watch is not active.</p>
-        </>
-      ) : null}
+      {channel.realtime === "manual" ? <p>New mail is imported when you sync.</p> : null}
+      {channel.realtime === "needs_attention" ? <p>Automatic updates need attention.</p> : null}
       {channel.lastNotificationAt ? (
         <p className="text-[var(--muted)]">Last received: {relativeTime(channel.lastNotificationAt, new Date())}</p>
       ) : null}
@@ -531,17 +540,64 @@ function GmailRealtimeStatus({ channel }: { channel: ChannelStatus }) {
   );
 }
 
+function visibleStatus(
+  channel: ChannelStatus,
+  busy: { provider: string; action: "connect" | "sync" | "disconnect" | "listen" } | null,
+): string {
+  if (busy?.provider === channel.provider) {
+    if (busy.action === "sync" || busy.action === "listen") {
+      return "Syncing";
+    }
+    if (busy.action === "disconnect") {
+      return "Disconnecting";
+    }
+    return "Connecting";
+  }
+  return channelStatusLabel(channel.availability);
+}
+
+function statusClass(
+  channel: ChannelStatus,
+  busy: { provider: string; action: "connect" | "sync" | "disconnect" | "listen" } | null,
+): string {
+  if (busy?.provider === channel.provider) {
+    return "";
+  }
+  const tone = channelStatusTone(channel.availability);
+  if (tone === "attention") {
+    return "text-[var(--high)]";
+  }
+  if (tone === "muted") {
+    return "text-[var(--muted)]";
+  }
+  return "";
+}
+
+function activityCopy(channel: ChannelStatus): string {
+  if (channel.lastSyncAt) {
+    return `Last sync ${formatDate(channel.lastSyncAt, "UTC")}`;
+  }
+  if (channel.availability === "connected") {
+    return channel.provider === "whatsapp" ? "Waiting for messages." : "Nothing imported yet.";
+  }
+  if (channel.availability === "not_configured") {
+    return "This channel is not set up yet.";
+  }
+  return "No account connected yet.";
+}
+
 function connectLabel(channel: ChannelStatus): string {
+  const again = channel.availability === "error" || channel.availability === "disconnected";
   if (channel.provider === "whatsapp") {
-    return "Connect WhatsApp";
+    return again ? "Reconnect WhatsApp" : "Connect WhatsApp";
   }
   if (channel.provider === "gmail") {
-    return channel.availability === "error" || channel.availability === "disconnected" ? "Reconnect" : "Connect Google";
+    return again ? "Reconnect Google" : "Connect Google";
   }
   if (channel.provider === "microsoft365") {
-    return channel.availability === "error" || channel.availability === "disconnected" ? "Reconnect" : "Connect Microsoft";
+    return again ? "Reconnect Microsoft" : "Connect Microsoft";
   }
-  return "Connect";
+  return again ? "Reconnect" : "Connect";
 }
 
 export function readDemoConnection(): boolean {

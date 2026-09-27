@@ -93,7 +93,7 @@ export function CommandCenter({ summary, signals, now = new Date() }: CommandCen
             {visible.length === 0 && caughtUp ? <EmptyAttention /> : null}
             {visible.length === 0 && !caughtUp ? (
               <p className="border border-[var(--line)] bg-[var(--panel)] px-5 py-6 text-sm text-[var(--muted)]">
-                Nothing matches this view.
+                Nothing in this view. Try another filter.
               </p>
             ) : null}
             {visible.length > 0 ? (
@@ -198,7 +198,7 @@ function SignalRow({
             href={actionHref(signal.action.id, businessId)}
             className="mt-2 inline-block border border-[var(--ink)] px-3 py-1.5 text-sm font-medium"
           >
-            Review
+            Review recommendation
           </Link>
         </div>
       ) : null}
@@ -214,7 +214,9 @@ function RecentConversations({ summary, now }: { summary: DashboardSummary; now:
       </h2>
       <p className="mt-1 text-sm text-[var(--muted)]">Not every conversation needs attention.</p>
       {summary.recent_conversations.length === 0 ? (
-        <p className="mt-3 text-sm text-[var(--muted)]">No conversations yet.</p>
+        <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+          No conversations yet. Connect a channel to start bringing conversations into VIGIE.
+        </p>
       ) : (
         <ol className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">
           {summary.recent_conversations.map((conversation) => (

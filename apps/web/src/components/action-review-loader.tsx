@@ -44,12 +44,12 @@ export function ActionReviewLoader() {
 
   return (
     <AppShell>
-      {state.phase === "loading" ? <DetailSkeleton label="Opening the recommendation" /> : null}
+      {state.phase === "loading" ? <DetailSkeleton label="Opening this recommendation" /> : null}
       {state.phase === "error" ? (
         <ErrorNotice
           onRetry={() => void load()}
           title="VIGIE couldn't open this recommendation."
-          detail="Please try again."
+          detail="Try again."
         />
       ) : null}
       {state.phase === "ready" ? (

@@ -62,9 +62,9 @@ export function understanding(events: string[]): string {
     return "Customer request detected";
   }
   if (events.length === 0) {
-    return "No business event detected";
+    return "Nothing that needs attention";
   }
-  return "Conversation interpreted";
+  return "Conversation read";
 }
 
 function parseDemoResult(value: unknown): DemoInboundResult {

@@ -47,7 +47,7 @@ export function OnboardingForm() {
         disabled={pending || name.trim().length === 0}
         className="mt-6 border border-[var(--ink)] bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--paper)] disabled:opacity-60"
       >
-        {pending ? "Please wait" : "Continue"}
+        {pending ? "Creating your business..." : "Create business"}
       </button>
       {error ? (
         <p className="mt-4 text-sm text-[var(--high)]" role="alert">

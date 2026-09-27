@@ -69,8 +69,10 @@ export function IntegrationsLoader() {
 
   return (
     <AppShell>
-      {phase === "loading" ? <p className="sr-only">Opening channels</p> : null}
-      {phase === "error" ? <ErrorNotice onRetry={() => void load()} title="VIGIE couldn't load your channels." /> : null}
+      {phase === "loading" ? <p className="sr-only">Loading your channels</p> : null}
+      {phase === "error" ? (
+        <ErrorNotice onRetry={() => void load()} title="VIGIE couldn't load your channels." detail="Try again." />
+      ) : null}
       {phase === "ready" && businessId ? (
         <IntegrationsPanel
           demoEnabled={demoEnabled}

@@ -77,6 +77,6 @@ describe("action review", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByRole("heading", { name: "VIGIE couldn't save this decision." })).toBeInTheDocument();
-    expect(screen.getByText("Please try again.")).toBeInTheDocument();
+    expect(screen.getByText("Try again.")).toBeInTheDocument();
   });
 });

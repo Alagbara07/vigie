@@ -7,16 +7,16 @@ describe("provider indicator", () => {
   it("shows NVIDIA only when that provider is configured", () => {
     render(<ProviderIndicator status={{ provider: "nvidia", configured: true, model: "example-model" }} />);
 
-    expect(screen.getByText("Understanding")).toBeInTheDocument();
-    expect(screen.getByText("NVIDIA")).toBeInTheDocument();
+    expect(screen.getByText("Understanding is active")).toBeInTheDocument();
+    expect(screen.queryByText("NVIDIA")).not.toBeInTheDocument();
     expect(screen.queryByText("example-model")).not.toBeInTheDocument();
   });
 
   it("does not claim NVIDIA is active when configuration is missing", () => {
-    render(<ProviderIndicator status={{ provider: "nvidia", configured: false, model: null }} />);
+    const { container } = render(<ProviderIndicator status={{ provider: "nvidia", configured: false, model: null }} />);
 
-    expect(screen.getByText("NVIDIA is not connected")).toBeInTheDocument();
-    expect(screen.queryByText("●")).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText("NVIDIA is not connected")).not.toBeInTheDocument();
   });
 
   it("keeps the local provider off the command center", () => {

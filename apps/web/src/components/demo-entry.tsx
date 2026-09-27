@@ -31,7 +31,7 @@ export function DemoEntry() {
         onClick={() => void start()}
         className="border border-[var(--ink)] bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--paper)] disabled:opacity-60"
       >
-        {pending ? "Please wait" : "Try Demo"}
+        {pending ? "Opening the demo..." : "Try Demo"}
       </button>
       <Link href="/login" className="text-sm font-medium underline-offset-4 hover:underline">
         Sign In

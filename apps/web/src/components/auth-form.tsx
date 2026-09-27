@@ -78,7 +78,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         disabled={pending}
         className="mt-6 border border-[var(--ink)] bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--paper)] disabled:opacity-60"
       >
-        {pending ? "Please wait" : signingUp ? "Create account" : "Sign in"}
+        {pending ? (signingUp ? "Creating your account..." : "Signing in...") : signingUp ? "Create account" : "Sign in"}
       </button>
       {error ? (
         <p className="mt-4 text-sm text-[var(--high)]" role="alert">

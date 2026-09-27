@@ -65,7 +65,7 @@ export function DemoControls({
           onClick={() => void perform("run", onRun)}
           className="border border-[var(--ink)] px-2 py-1 text-xs font-medium disabled:opacity-60"
         >
-          {pending === "run" ? "Preparing" : "Run VIGIE Demo"}
+          {pending === "run" ? "Preparing the demo..." : "Run VIGIE Demo"}
         </button>
         <button
           type="button"
@@ -73,10 +73,10 @@ export function DemoControls({
           onClick={() => void perform("reset", onReset)}
           className="px-2 py-1 text-xs text-[var(--muted)] underline-offset-4 hover:underline disabled:opacity-60"
         >
-          {pending === "reset" ? "Resetting" : "Reset"}
+          {pending === "reset" ? "Resetting the demo..." : "Reset demo"}
         </button>
       </div>
-      {failed ? <p className="mt-2 text-xs text-[var(--muted)]">The demo could not be prepared.</p> : null}
+      {failed ? <p className="mt-2 text-xs text-[var(--muted)]">The demo could not be prepared. Try again.</p> : null}
     </section>
   );
 }

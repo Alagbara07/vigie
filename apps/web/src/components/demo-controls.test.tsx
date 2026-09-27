@@ -15,7 +15,7 @@ describe("demo controls", () => {
 
     expect(screen.getByText("Demo")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run VIGIE Demo" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset demo" })).toBeInTheDocument();
   });
 
   it("explains when the demo cannot be prepared", async () => {
@@ -29,7 +29,7 @@ describe("demo controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Run VIGIE Demo" }));
 
-    expect(await screen.findByText("The demo could not be prepared.")).toBeInTheDocument();
+    expect(await screen.findByText("The demo could not be prepared. Try again.")).toBeInTheDocument();
   });
 
   it("does not mount controls before demo mode is known", () => {

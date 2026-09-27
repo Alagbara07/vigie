@@ -1,7 +1,7 @@
 export function ErrorNotice({
   onRetry,
   title = "VIGIE couldn't load your signals.",
-  detail = "Please try again.",
+  detail = "Try again.",
 }: {
   onRetry: () => void;
   title?: string;
@@ -37,7 +37,7 @@ export function EmptyAttention() {
   return (
     <div className="border border-[var(--line)] bg-[var(--panel)] px-5 py-8">
       <p className="max-w-md text-sm leading-6 text-[var(--muted)]">
-        VIGIE isn&apos;t seeing anything that requires your attention right now.
+        Nothing needs your attention right now.
       </p>
     </div>
   );
@@ -46,7 +46,7 @@ export function EmptyAttention() {
 export function DashboardSkeleton() {
   return (
     <div aria-busy="true" aria-live="polite">
-      <p className="sr-only">Checking what needs attention</p>
+      <p className="sr-only">Looking for what needs your attention</p>
       <div className="h-4 w-24 bg-[var(--line)]" />
       <div className="mt-3 h-4 w-72 bg-[var(--line)]" />
       <div className="mt-8 h-10 w-64 bg-[var(--line)]" />
@@ -64,7 +64,7 @@ export function DashboardSkeleton() {
   );
 }
 
-export function DetailSkeleton({ label = "Opening the signal" }: { label?: string }) {
+export function DetailSkeleton({ label = "Opening this item" }: { label?: string }) {
   return (
     <div aria-busy="true" aria-live="polite" className="max-w-2xl">
       <p className="sr-only">{label}</p>

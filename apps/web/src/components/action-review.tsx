@@ -108,7 +108,7 @@ export function ActionReview({
       {phase === "error" ? (
         <section className="mt-8 max-w-lg border border-[var(--line)] bg-[var(--panel)] px-5 py-6" role="alert">
           <h2 className="text-xl font-semibold tracking-tight">VIGIE couldn&apos;t save this decision.</h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Please try again.</p>
+          <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Try again.</p>
         </section>
       ) : null}
 

@@ -42,7 +42,7 @@ describe("integrations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Google" }));
     fireEvent.click(screen.getByRole("button", { name: "Connect Microsoft" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Configuration required.");
+    expect(screen.getByRole("alert")).toHaveTextContent("This channel is not set up yet.");
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   });
 
@@ -58,7 +58,8 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("Account Adaeze line")).toBeInTheDocument();
+    expect(screen.getByText("WhatsApp number: Adaeze line")).toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("WhatsApp Connected")).not.toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
@@ -75,8 +76,9 @@ describe("integrations", () => {
       />,
     );
 
-    expect(screen.getByText("Available")).toBeInTheDocument();
-    expect(screen.getByText(/Connect Google starts OAuth/)).toBeInTheDocument();
+    expect(screen.getByText("Ready to connect")).toBeInTheDocument();
+    expect(screen.getByText(/Connect Google to bring a Gmail mailbox/)).toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
     expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
   });
@@ -97,8 +99,9 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("Account ada@example.com")).toBeInTheDocument();
-    expect(screen.getByText("The Gmail watch is not active.")).toBeInTheDocument();
+    expect(screen.getByText("Gmail mailbox: ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Automatic updates need attention.")).toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
   });
 
@@ -111,8 +114,9 @@ describe("integrations", () => {
       />,
     );
 
-    expect(screen.getByText("Available")).toBeInTheDocument();
-    expect(screen.getByText(/Connect Microsoft starts OAuth/)).toBeInTheDocument();
+    expect(screen.getByText("Ready to connect")).toBeInTheDocument();
+    expect(screen.getByText(/Connect Microsoft to bring an Outlook mailbox/)).toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
   });
@@ -135,7 +139,8 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("Account ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Outlook mailbox: ada@example.com")).toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.getByText(/does not send email/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable real-time listening" })).not.toBeInTheDocument();
     await act(async () => {
@@ -146,6 +151,27 @@ describe("integrations", () => {
       fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     });
     expect(onDisconnect).toHaveBeenCalledWith("microsoft365");
+  });
+
+  it("asks to reconnect Microsoft when the mailbox needs attention", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={microsoft({
+          availability: "error",
+          configured: true,
+          lastError: "Microsoft 365 needs to be reconnected.",
+        })}
+        onSend={async () => result}
+      />,
+    );
+
+    expect(screen.getByText("Needs attention")).toBeInTheDocument();
+    expect(screen.getAllByText("Reconnect your Microsoft account.").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Reconnect Microsoft" })).toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
   });
 
   it("explains the Meta setup and does not call an unconnected number connected", () => {
@@ -161,7 +187,8 @@ describe("integrations", () => {
       />,
     );
 
-    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("Ready to connect")).toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.getByText(/does not send a reply/i)).toBeInTheDocument();
     expect(screen.getByText("https://vigie-api.example/api/integrations/whatsapp/webhook")).toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
@@ -176,8 +203,10 @@ describe("integrations", () => {
       />,
     );
 
-    expect(screen.getByText("Error")).toBeInTheDocument();
+    expect(screen.getByText("Needs attention")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("VIGIE could not sync WhatsApp.");
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect WhatsApp" })).toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   });
 
@@ -189,7 +218,7 @@ describe("integrations", () => {
     expect(screen.getByText("Demo connection active")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Send to VIGIE" }));
 
-    expect(await screen.findByText("Message received. VIGIE is analyzing the conversation.")).toBeInTheDocument();
+    expect(await screen.findByText("Message received. Analyzing the conversation...")).toBeInTheDocument();
     expect(onSend).toHaveBeenCalledWith({
       customerName: "Amaka Bello",
       text: "I'll pay the remaining ₦150,000 on Friday.",
@@ -210,7 +239,7 @@ describe("integrations", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Send to VIGIE" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("VIGIE couldn't receive that message. Please try again.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("VIGIE couldn't receive that message. Try again.");
   });
 
   it("shows Gmail listening only when a watch is registered", async () => {
@@ -264,11 +293,11 @@ describe("integrations", () => {
       />,
     );
 
-    expect(screen.getByText("Manual sync available")).toBeInTheDocument();
-    expect(screen.getByText("Real-time listening: Not configured")).toBeInTheDocument();
+    expect(screen.getByText("New mail is imported when you sync.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Turn on automatic updates" })).toBeInTheDocument();
     expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Enable real-time listening" }));
+      fireEvent.click(screen.getByRole("button", { name: "Turn on automatic updates" }));
     });
     expect(onEnableListening).toHaveBeenCalledWith("gmail");
   });
@@ -288,8 +317,10 @@ describe("integrations", () => {
       />,
     );
 
-    expect(screen.getByText("Needs attention")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Real-time listening could not be enabled.");
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("Automatic updates need attention.")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Automatic updates could not be turned on. Try again.");
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
   });
 

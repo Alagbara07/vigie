@@ -46,12 +46,9 @@ export function SignalDetailView({ detail }: { detail: SignalDetail }) {
             <p className="mt-3 text-sm text-[var(--muted)]">
               Received {formatDate(detail.evidence.occurred_at, detail.timezone)}
             </p>
-            {detail.evidence.external_message_id ? (
-              <p className="mt-1 text-xs text-[var(--muted)]">External message {detail.evidence.external_message_id}</p>
-            ) : null}
           </figure>
         ) : (
-          <p className="mt-3 text-sm text-[var(--muted)]">No source message is attached to this signal.</p>
+          <p className="mt-3 text-sm text-[var(--muted)]">The original message is not attached to this item.</p>
         )}
         <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
           {detail.event ? (
@@ -114,7 +111,7 @@ export function SignalDetailView({ detail }: { detail: SignalDetail }) {
             href={actionHref(detail.action.id, detail.business_id)}
             className="mt-3 inline-block border border-[var(--ink)] px-3 py-1.5 text-sm font-medium"
           >
-            Review
+            Review recommendation
           </Link>
         </section>
       ) : null}

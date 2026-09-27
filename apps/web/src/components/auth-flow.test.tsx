@@ -174,7 +174,7 @@ describe("authentication flow", () => {
     auth.createBusiness.mockResolvedValue(undefined);
     render(<OnboardingForm />);
     fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "North Shop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create business" }));
     await waitFor(() => expect(auth.createBusiness).toHaveBeenCalledWith("North Shop"));
     expect(nav.push).toHaveBeenCalledWith("/");
   });

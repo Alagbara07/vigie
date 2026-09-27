@@ -44,8 +44,8 @@ export function SystemStatus() {
   const database = describeDatabase(state);
 
   return (
-    <section className="mt-12 w-full max-w-md border border-zinc-200 bg-white p-6">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+    <section className="mt-12 w-full max-w-md border border-[var(--line)] bg-[var(--panel)] p-6">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--muted)]">
         System status
       </h2>
       <ul className="mt-4 space-y-3">
@@ -58,30 +58,30 @@ export function SystemStatus() {
 
 function describeApi(state: StatusState): { indicator: Indicator; label: string } {
   if (state.phase === "loading") {
-    return { indicator: "loading", label: "Checking API" };
+    return { indicator: "loading", label: "Checking the service" };
   }
   if (state.phase === "api_unavailable") {
-    return { indicator: "down", label: "API unavailable" };
+    return { indicator: "down", label: "Service unavailable" };
   }
-  return { indicator: "ok", label: "API Connected" };
+    return { indicator: "ok", label: "Service ready" };
 }
 
 function describeDatabase(state: StatusState): { indicator: Indicator; label: string } {
   if (state.phase === "loading") {
-    return { indicator: "loading", label: "Checking database" };
+    return { indicator: "loading", label: "Checking saved data" };
   }
   if (state.phase === "api_unavailable") {
-    return { indicator: "unknown", label: "Database status unknown" };
+    return { indicator: "unknown", label: "Saved data status unknown" };
   }
   if (state.health.database === "ok") {
-    return { indicator: "ok", label: "Database Ready" };
+    return { indicator: "ok", label: "Saved data ready" };
   }
-  return { indicator: "down", label: "Database unavailable" };
+    return { indicator: "down", label: "Saved data unavailable" };
 }
 
 function StatusLine({ indicator, label }: { indicator: Indicator; label: string }) {
   return (
-    <li className="flex items-center gap-3 text-sm text-zinc-900">
+    <li className="flex items-center gap-3 text-sm text-[var(--ink)]">
       <span
         aria-hidden="true"
         className={`h-2.5 w-2.5 rounded-full ${indicatorClass(indicator)}`}
