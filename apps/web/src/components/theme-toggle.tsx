@@ -26,7 +26,7 @@ export function ThemeToggle() {
       ref={buttonRef}
       type="button"
       onClick={toggle}
-      aria-label="Switch to dark mode"
+      aria-label="Switch to light mode"
       className="inline-flex items-center gap-1.5 border border-[var(--line)] bg-[var(--panel)] px-2 py-1 text-xs font-medium text-[var(--ink)] hover:bg-[var(--paper)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)]"
     >
       <span className="theme-offer-dark" aria-hidden="true">

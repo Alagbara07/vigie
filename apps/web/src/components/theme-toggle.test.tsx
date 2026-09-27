@@ -7,28 +7,40 @@ import { THEME_STORAGE_KEY } from "@/lib/theme";
 describe("theme toggle", () => {
   beforeEach(() => {
     localStorage.clear();
-    document.documentElement.removeAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", "dark");
   });
 
-  it("starts in light mode", () => {
+  it("starts in dark mode", () => {
     render(<ThemeToggle />);
+
+    expect(screen.getByRole("button", { name: "Switch to light mode" })).toBeInTheDocument();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
+  it("switches from dark to light and back", () => {
+    render(<ThemeToggle />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to light mode" }));
 
     expect(screen.getByRole("button", { name: "Switch to dark mode" })).toBeInTheDocument();
     expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
-  });
-
-  it("switches from light to dark and back", () => {
-    render(<ThemeToggle />);
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
 
     fireEvent.click(screen.getByRole("button", { name: "Switch to dark mode" }));
 
     expect(screen.getByRole("button", { name: "Switch to light mode" })).toBeInTheDocument();
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Switch to light mode" }));
+  it("keeps a stored light choice after a reload", async () => {
+    localStorage.setItem(THEME_STORAGE_KEY, "light");
+    document.documentElement.removeAttribute("data-theme");
 
-    expect(screen.getByRole("button", { name: "Switch to dark mode" })).toBeInTheDocument();
+    render(<ThemeToggle />);
+
+    expect(await screen.findByRole("button", { name: "Switch to dark mode" })).toBeInTheDocument();
     expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
   });
@@ -45,13 +57,11 @@ describe("theme toggle", () => {
 
   it("keeps dark mode when the shell is mounted again", async () => {
     const first = render(<ThemeToggle />);
-    fireEvent.click(screen.getByRole("button", { name: "Switch to dark mode" }));
     first.unmount();
 
     render(<ThemeToggle />);
 
     expect(await screen.findByRole("button", { name: "Switch to light mode" })).toBeInTheDocument();
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 });

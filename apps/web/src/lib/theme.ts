@@ -2,11 +2,11 @@ export const THEME_STORAGE_KEY = "vigie-theme";
 
 export type ThemeChoice = "light" | "dark";
 
-export const themeBootScript = `(function(){try{if(localStorage.getItem("${THEME_STORAGE_KEY}")==="dark"){document.documentElement.setAttribute("data-theme","dark")}}catch(e){}})();`;
+export const themeBootScript = `(function(){try{var stored=localStorage.getItem("${THEME_STORAGE_KEY}");if(stored==="light"){document.documentElement.removeAttribute("data-theme")}else{document.documentElement.setAttribute("data-theme","dark")}}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();`;
 
 export function readTheme(): ThemeChoice {
   if (typeof document === "undefined") {
-    return "light";
+    return "dark";
   }
   return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
 }
