@@ -2,20 +2,28 @@
 
 import { useEffect, useState } from "react";
 
+import { useSession } from "@/components/session-provider";
 import { loadProviderStatus, type ProviderStatus } from "@/lib/api/system";
 
 export function ProviderStatusLoader() {
+  const { session } = useSession();
   const [status, setStatus] = useState<ProviderStatus | null>(null);
 
   useEffect(() => {
+    if (session == null) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       void loadProviderStatus()
         .then(setStatus)
         .catch(() => setStatus(null));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [session]);
 
+  if (session == null) {
+    return null;
+  }
   return <ProviderIndicator status={status} />;
 }
 

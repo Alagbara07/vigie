@@ -88,7 +88,9 @@ Redirect URI:
 
 Leave `GOOGLE_REDIRECT_URI` empty and set `API_PUBLIC_URL` to the public API origin. The API then uses that redirect. Set `GOOGLE_REDIRECT_URI` only when the callback must differ from that derived URL. Production rejects an HTTP or localhost redirect.
 
-The requested scope is `https://www.googleapis.com/auth/gmail.readonly`. The browser is sent to Google. The callback reads `state` from the server-side record and does not trust a `business_id` on the callback. Tokens stay on the server. `POST /api/integrations/gmail/sync` reads recent messages through the Gmail API.
+VIGIE requests `openid`, `email`, `profile`, and `https://www.googleapis.com/auth/gmail.readonly`, with offline access so the access token can be refreshed. It does not request Gmail send, modify, or delete. The browser is sent to Google. The callback reads `state` from the server-side record and does not trust a `business_id` on the callback. Tokens stay on the server. `POST /api/integrations/gmail/sync` reads recent messages through the Gmail API and passes them through the same message pipeline as the other channels. VIGIE does not send email.
+
+A connected mailbox shows as Connected, with the stored Gmail address. Sync now imports recent mail. Disconnect removes the stored mailbox, tokens, and watch routing, so a later sync or notification does not import mail. If the refresh token is missing or rejected, the channel needs attention and the mailbox must be connected again. An expired access token is refreshed before sync. An expired Gmail watch is renewed by the daily command when Pub/Sub is configured; until then the card stays connected and Sync now remains the way to import mail. Listening is shown only while the stored watch expiration is still in the future.
 
 ## Gmail real-time setup
 
@@ -97,7 +99,7 @@ OAuth and Pub/Sub are separate. The API starts, the demo runs, and Gmail shows "
 This repository has not been tested against a live Google Cloud project.
 
 1. Create a Google Cloud project and enable the Gmail API.
-2. Create an OAuth client. The redirect URI is `{API_PUBLIC_URL}/api/integrations/gmail/callback` unless `GOOGLE_REDIRECT_URI` is set. The scope is `https://www.googleapis.com/auth/gmail.readonly`.
+2. Create an OAuth client. The redirect URI is `{API_PUBLIC_URL}/api/integrations/gmail/callback` unless `GOOGLE_REDIRECT_URI` is set. Enable the Gmail API. The consent screen scopes are OpenID, email, profile, and Gmail readonly. Do not add send or modify.
 3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the API environment. Leave `GOOGLE_REDIRECT_URI` empty to use `API_PUBLIC_URL`. Do not commit them.
 4. Create a Pub/Sub topic, for example `projects/PROJECT_ID/topics/vigie-gmail`. Grant `gmail-api-push@system.gserviceaccount.com` the Pub/Sub Publisher role on that topic. Gmail's watch call publishes there.
 5. Create a push subscription on that topic. The push endpoint is `{API_PUBLIC_URL}/api/integrations/gmail/pubsub`. Enable authentication and set the audience to that same URL. Note the push service account email.
@@ -106,7 +108,7 @@ This repository has not been tested against a live Google Cloud project.
 8. `POST /api/integrations/gmail/pubsub` accepts the push. It verifies the Google OIDC bearer token, checks that the subscription belongs to the same project as the topic, and only then reads `emailAddress` and `historyId`. The notification is not the email. VIGIE calls `history.list` and fetches the changed messages. An unknown mailbox is acknowledged and ignored. A repeated delivery does not create another message, event, commitment, or signal.
 9. The endpoint requires HTTPS in production. Google will not push to a laptop address. Locally, use Connect and Sync now. Real-time listening stays "Not configured" until the three Pub/Sub variables are set.
 10. Watches expire. Renew them before the stored expiration. Run `python -m app.jobs.renew_gmail_watches` once a day from the host scheduler. The command uses the expiration Google returned and `GMAIL_WATCH_RENEW_WITHIN_HOURS` (default 24). One mailbox that fails is recorded and the next mailbox still renews. No queue or cache is required. Disconnecting Gmail clears the mailbox id and the stored tokens, so a later notification is ignored.
-11. If Gmail says the stored history id is gone, VIGIE syncs recent messages and stores a new history baseline. A failed watch leaves the mailbox connected, records the error, and can be retried with Enable real-time listening.
+11. If Gmail says the stored history id is gone, VIGIE syncs recent messages and stores a new history baseline. A failed watch leaves the mailbox connected, records the error, and can be retried with Turn on automatic updates. Disconnecting clears the stored watch, so a later notification for that mailbox is ignored. Google may keep publishing until the watch expires; VIGIE does not store those messages.
 
 VIGIE does this automatically after the environment is set: start OAuth, bind and consume `state`, encrypt the tokens, store the mailbox on that business, register the watch, verify Pub/Sub, ignore unknown mailboxes and repeats, and renew watches from the daily command.
 

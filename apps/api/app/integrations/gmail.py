@@ -35,7 +35,7 @@ _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
 _PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile"
 _LIST_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10"
-_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+_SCOPE = "openid email profile https://www.googleapis.com/auth/gmail.readonly"
 _PROVIDER_FAILURE = "The provider could not complete the connection."
 _SYNC_FAILURE = "VIGIE could not sync Gmail."
 _RECONNECT = "Gmail needs to be reconnected."
@@ -139,7 +139,7 @@ def complete_gmail_oauth(
         provider=IntegrationProvider.GMAIL,
         external_account_id=email,
         display_name=email,
-        metadata={"scope": _SCOPE},
+        metadata={"mail": email, "scope": _SCOPE},
         connected_by_user_id=user_id,
     )
     refresh = tokens.get("refresh_token")
@@ -206,15 +206,18 @@ def access_token_for(session: Session, connection: ChannelConnection) -> str:
     if not refresh:
         raise ProviderError(_RECONNECT)
     settings = get_settings()
-    tokens = post_form(
-        _TOKEN_URL,
-        {
-            "client_id": settings.google_client_id,
-            "client_secret": settings.google_client_secret,
-            "refresh_token": refresh,
-            "grant_type": "refresh_token",
-        },
-    )
+    try:
+        tokens = post_form(
+            _TOKEN_URL,
+            {
+                "client_id": settings.google_client_id,
+                "client_secret": settings.google_client_secret,
+                "refresh_token": refresh,
+                "grant_type": "refresh_token",
+            },
+        )
+    except ProviderError as exc:
+        raise ProviderError(_RECONNECT) from exc
     access = tokens.get("access_token")
     if not isinstance(access, str) or not access:
         raise ProviderError(_RECONNECT)

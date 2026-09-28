@@ -229,6 +229,12 @@ def test_gmail_oauth_normalizes_and_isolates_the_business(api_client: TestClient
         listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
     assert missing.status_code == 404
     assert "accounts.google.com" in started.headers["location"]
+    assert "access_type=offline" in started.headers["location"]
+    assert "gmail.readonly" in started.headers["location"]
+    assert "openid" in started.headers["location"]
+    assert "gmail.send" not in started.headers["location"]
+    assert "gmail.modify" not in started.headers["location"]
+    assert "gmail.compose" not in started.headers["location"]
     assert SECRET not in started.headers["location"]
     assert callback.status_code == 302
     assert callback.headers["location"].endswith("/settings/integrations?connection=gmail")
@@ -243,6 +249,9 @@ def test_gmail_oauth_normalizes_and_isolates_the_business(api_client: TestClient
     assert TOKEN not in listed.text
     assert REFRESH not in listed.text
     assert SECRET not in listed.text
+    gmail = next(item for item in listed.json() if item["provider"] == "gmail")
+    assert gmail["availability"] == "connected"
+    assert gmail["account_label"] == "amaka@example.com"
     message = db_session.scalar(select(Message).where(Message.business_id == business.id))
     assert message is not None
     assert message.source == "gmail"
@@ -465,6 +474,165 @@ def test_approval_still_does_not_send() -> None:
 
     with pytest.raises(OutboundDisabled):
         WhatsAppAdapter().send_message("2348000000000", "Hello")
+    with pytest.raises(OutboundDisabled):
+        GmailAdapter().send_message("ada@example.com", "Hello")
+    with pytest.raises(OutboundDisabled):
+        MicrosoftAdapter().send_message("ada@example.com", "Hello")
+
+
+def test_gmail_expired_state_and_wrong_user_are_rejected(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    from app.domain.enums import IntegrationProvider
+    from app.domain.errors import ProviderError
+    from app.integrations.connections import consume_oauth_state
+
+    business = _business(db_session, "gmail-state")
+    other = _business(db_session, "gmail-state-other")
+    monkeypatch.setattr("app.integrations.gmail.post_form", _gmail_token)
+    monkeypatch.setattr("app.integrations.gmail.get_json", _gmail_get)
+    with _env(
+        GOOGLE_CLIENT_ID="google-client",
+        GOOGLE_CLIENT_SECRET=SECRET,
+        API_PUBLIC_URL="https://vigie-api.example",
+        GOOGLE_REDIRECT_URI="",
+    ):
+        started = api_client.get(
+            "/api/integrations/gmail/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        row = db_session.scalar(select(OAuthState).where(OAuthState.state == state))
+        assert row is not None
+        assert row.business_id == business.id
+        assert row.user_id is not None
+        with pytest.raises(ProviderError, match="Invalid or expired connection attempt"):
+            consume_oauth_state(db_session, state, IntegrationProvider.GMAIL, uuid.uuid4())
+        db_session.refresh(row)
+        assert row.used_at is None
+        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        db_session.commit()
+        expired = api_client.get(
+            "/api/integrations/gmail/callback",
+            params={"code": "auth-code", "state": state},
+            follow_redirects=False,
+        )
+        crossed = api_client.get(
+            "/api/integrations/gmail/connect",
+            params={"business_id": str(other.id)},
+            follow_redirects=False,
+        )
+    assert "redirect_uri=https%3A%2F%2Fvigie-api.example%2Fapi%2Fintegrations%2Fgmail%2Fcallback" in started.headers["location"]
+    assert "connection=error" in expired.headers["location"]
+    assert crossed.status_code == 302
+    assert db_session.scalar(
+        select(ChannelConnection).where(ChannelConnection.business_id == business.id, ChannelConnection.provider == "gmail")
+    ) is None
+
+
+def test_gmail_invalid_refresh_requires_reconnection(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    business = _business(db_session, "gmail-refresh-fail")
+    other = _business(db_session, "gmail-refresh-other")
+    monkeypatch.setattr("app.integrations.gmail.post_form", _gmail_token)
+    monkeypatch.setattr("app.integrations.gmail.get_json", _gmail_get)
+    monkeypatch.setattr("app.integrations.gmail.gmail_get", _gmail_get)
+
+    def rejected(url: str, data: dict[str, str]) -> dict:
+        if data.get("grant_type") == "refresh_token":
+            from app.domain.errors import ProviderError
+
+            raise ProviderError("The provider could not complete the connection.")
+        return _gmail_token(url, data)
+
+    with _env(
+        GOOGLE_CLIENT_ID="google-client",
+        GOOGLE_CLIENT_SECRET=SECRET,
+        GOOGLE_REDIRECT_URI="https://vigie-api.example/api/integrations/gmail/callback",
+    ), caplog.at_level(logging.DEBUG):
+        started = api_client.get(
+            "/api/integrations/gmail/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        api_client.get("/api/integrations/gmail/callback", params={"code": "auth-code", "state": state}, follow_redirects=False)
+        secret = db_session.get(IntegrationCredential, _connection_id(db_session, business.id, "gmail"))
+        assert secret is not None
+        secret.expires_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        db_session.commit()
+        monkeypatch.setattr("app.integrations.gmail.post_form", rejected)
+        failed = api_client.post("/api/integrations/gmail/sync", params={"business_id": str(business.id)})
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+        isolated = api_client.post("/api/integrations/gmail/sync", params={"business_id": str(other.id)})
+    assert failed.status_code == 409
+    assert failed.json()["detail"] == "Gmail needs to be reconnected."
+    gmail = next(item for item in listed.json() if item["provider"] == "gmail")
+    assert gmail["availability"] == "error"
+    assert gmail["last_error"] == "Gmail needs to be reconnected."
+    assert TOKEN not in listed.text
+    assert REFRESH not in listed.text
+    assert isolated.status_code == 404
+    assert TOKEN not in caplog.text
+    assert REFRESH not in caplog.text
+
+
+def test_gmail_sync_handles_an_empty_or_malformed_mailbox(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    from app.domain.errors import ProviderError
+
+    business = _business(db_session, "gmail-empty")
+    monkeypatch.setattr("app.integrations.gmail.post_form", _gmail_token)
+    monkeypatch.setattr("app.integrations.gmail.get_json", _gmail_get)
+
+    def empty(url: str, access_token: str) -> dict:
+        assert access_token == TOKEN
+        if "messages?" in url:
+            return {"messages": []}
+        if url.endswith("/profile"):
+            return {"emailAddress": "amaka@example.com"}
+        return {"unexpected": True}
+
+    monkeypatch.setattr("app.integrations.gmail.gmail_get", empty)
+    with _env(
+        GOOGLE_CLIENT_ID="google-client",
+        GOOGLE_CLIENT_SECRET=SECRET,
+        GOOGLE_REDIRECT_URI="https://vigie-api.example/api/integrations/gmail/callback",
+    ):
+        started = api_client.get(
+            "/api/integrations/gmail/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        api_client.get("/api/integrations/gmail/callback", params={"code": "auth-code", "state": state}, follow_redirects=False)
+        synced = api_client.post("/api/integrations/gmail/sync", params={"business_id": str(business.id)})
+
+        def broken(url: str, access_token: str) -> dict:
+            del url, access_token
+            raise ProviderError("VIGIE could not sync Gmail.")
+
+        monkeypatch.setattr("app.integrations.gmail.gmail_get", broken)
+        failed = api_client.post("/api/integrations/gmail/sync", params={"business_id": str(business.id)})
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+    assert synced.status_code == 200
+    assert synced.json()["stored"] == 0
+    assert _count(db_session, Message, business.id) == 0
+    assert failed.status_code == 409
+    assert failed.json()["detail"] == "VIGIE could not sync Gmail."
+    gmail = next(item for item in listed.json() if item["provider"] == "gmail")
+    assert gmail["availability"] == "error"
+    assert _count(db_session, Message, business.id) == 0
 
 
 def test_gmail_connect_is_unavailable_until_configured(api_client: TestClient, db_session: Session) -> None:

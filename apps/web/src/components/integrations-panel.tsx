@@ -10,7 +10,7 @@ import {
   type DemoInboundResult,
 } from "@/lib/api/integrations";
 import { formatDate, relativeTime } from "@/lib/format";
-import { channelStatusLabel, channelStatusTone, connectedAccountLine, userFacingError } from "@/lib/ux";
+import { channelStatusLabel, channelStatusTone, connectedAccount, userFacingError } from "@/lib/ux";
 
 const CONNECTION_KEY = "vigie-demo-whatsapp";
 
@@ -65,6 +65,7 @@ export function IntegrationsPanel({
   onSync,
   onEnableListening,
   canManage = true,
+  connectionNotice = null,
 }: {
   demoEnabled: boolean;
   initiallyConnected?: boolean;
@@ -78,6 +79,7 @@ export function IntegrationsPanel({
   onSync?: (provider: string) => Promise<void>;
   onEnableListening?: (provider: string) => Promise<void>;
   canManage?: boolean;
+  connectionNotice?: string | null;
 }) {
   const [connected, setConnected] = useState(initiallyConnected && demoEnabled);
   const [customerName, setCustomerName] = useState("Amaka Bello");
@@ -175,6 +177,7 @@ export function IntegrationsPanel({
       setChannelNotice("This channel is not set up yet.");
       return;
     }
+    setBusy({ provider: channel.provider, action: "connect" });
     onStartOauth(channel.provider);
   }
 
@@ -226,6 +229,11 @@ export function IntegrationsPanel({
         VIGIE can monitor the conversations your business already uses and surface the commitments, requests and risks
         that need your attention.
       </p>
+      {connectionNotice ? (
+        <p className="mt-4 text-sm text-[var(--high)]" role="alert">
+          {connectionNotice}
+        </p>
+      ) : null}
 
       <div className="mt-8 grid gap-4">
         <section className="border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
@@ -268,7 +276,7 @@ export function IntegrationsPanel({
             <WhatsAppSetup channel={channel} />
             <GmailSetup channel={channel} />
             <MicrosoftSetup channel={channel} />
-            {connectedAccountLine(channel) ? <p className="mt-3 text-sm">{connectedAccountLine(channel)}</p> : null}
+            <ConnectedAccount channel={channel} />
             <GmailRealtimeStatus channel={channel} />
             <p className="mt-2 text-sm text-[var(--muted)]">{activityCopy(channel)}</p>
             {(channel.availability === "error" || channel.realtime === "needs_attention") && channel.lastError ? (
@@ -278,6 +286,8 @@ export function IntegrationsPanel({
             ) : null}
             {!canManage ? (
               <p className="mt-4 text-sm text-[var(--muted)]">You do not have permission to manage integrations.</p>
+            ) : channel.availability === "connected" && busy?.provider === channel.provider && busy.action === "sync" ? (
+              <p className="mt-4 text-sm text-[var(--muted)]">{syncingCopy(channel)}</p>
             ) : channel.availability === "connected" ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 {channel.provider === "gmail" || channel.provider === "microsoft365" ? (
@@ -483,17 +493,19 @@ function MicrosoftSetup({ channel }: { channel: ChannelStatus }) {
   }
   if (channel.availability === "connected") {
     return (
-      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-        Sync now imports recent Outlook mail. VIGIE does not send email.
-      </p>
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Your Outlook mailbox is connected to VIGIE.</p>
     );
   }
   if (channel.availability === "error") {
-    return <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Reconnect your Microsoft account.</p>;
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        We couldn&apos;t sync this Outlook mailbox. Reconnect your Microsoft account to continue.
+      </p>
+    );
   }
   return (
     <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-      Connect Microsoft to bring an Outlook mailbox into this business. VIGIE does not send email.
+      Connect your Microsoft account to bring Outlook conversations into VIGIE.
     </p>
   );
 }
@@ -504,22 +516,28 @@ function GmailSetup({ channel }: { channel: ChannelStatus }) {
   }
   if (!channel.configured) {
     return (
-      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Gmail is not set up for this workspace yet.</p>
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        Google Workspace has not been connected to VIGIE yet.
+      </p>
     );
   }
   if (channel.availability === "connected") {
     return (
       <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-        Sync now imports recent Gmail. VIGIE does not send email.
+        Your Gmail messages are available to VIGIE for analysis.
       </p>
     );
   }
   if (channel.availability === "error") {
-    return <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Reconnect your Google account.</p>;
+    return (
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        We couldn&apos;t sync this Gmail mailbox. Reconnect your Google account to continue.
+      </p>
+    );
   }
   return (
     <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-      Connect Google to bring a Gmail mailbox into this business. VIGIE does not send email.
+      Connect your Google account to bring Gmail conversations into VIGIE.
     </p>
   );
 }
@@ -586,8 +604,33 @@ function activityCopy(channel: ChannelStatus): string {
   return "No account connected yet.";
 }
 
+function ConnectedAccount({ channel }: { channel: ChannelStatus }) {
+  const account = connectedAccount(channel);
+  if (!account) {
+    return null;
+  }
+  return (
+    <p className="mt-3 text-sm">
+      {account.label}:<span className="mt-1 block">{account.value}</span>
+    </p>
+  );
+}
+
+function syncingCopy(channel: ChannelStatus): string {
+  if (channel.provider === "microsoft365") {
+    return "Importing new Outlook conversations...";
+  }
+  if (channel.provider === "gmail") {
+    return "Importing new Gmail conversations...";
+  }
+  return "Importing new conversations...";
+}
+
 function connectLabel(channel: ChannelStatus): string {
-  const again = channel.availability === "error" || channel.availability === "disconnected";
+  if (!channel.configured && channel.provider === "gmail") {
+    return "Configure Google";
+  }
+  const again = channel.availability === "error";
   if (channel.provider === "whatsapp") {
     return again ? "Reconnect WhatsApp" : "Connect WhatsApp";
   }

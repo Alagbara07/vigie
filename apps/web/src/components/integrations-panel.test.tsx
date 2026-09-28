@@ -39,7 +39,7 @@ describe("integrations", () => {
     render(<IntegrationsPanel demoEnabled onSend={async () => result} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Connect WhatsApp" }));
-    fireEvent.click(screen.getByRole("button", { name: "Connect Google" }));
+    fireEvent.click(screen.getByRole("button", { name: "Configure Google" }));
     fireEvent.click(screen.getByRole("button", { name: "Connect Microsoft" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("This channel is not set up yet.");
@@ -58,7 +58,8 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("WhatsApp number: Adaeze line")).toBeInTheDocument();
+    expect(screen.getByText("WhatsApp number:")).toBeInTheDocument();
+    expect(screen.getByText("Adaeze line")).toBeInTheDocument();
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("WhatsApp Connected")).not.toBeInTheDocument();
     await act(async () => {
@@ -77,10 +78,138 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Ready to connect")).toBeInTheDocument();
-    expect(screen.getByText(/Connect Google to bring a Gmail mailbox/)).toBeInTheDocument();
+    expect(screen.getByText(/Connect your Google account to bring Gmail conversations/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Google" })).toBeInTheDocument();
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
     expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Configure Google" })).not.toBeInTheDocument();
+  });
+
+  it("asks to configure Google before a mailbox can be connected", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={gmail({ availability: "not_configured", configured: false })}
+        onSend={async () => result}
+      />,
+    );
+
+    const card = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
+    expect(card).toHaveTextContent("Not configured");
+    expect(screen.getByText("Google Workspace has not been connected to VIGIE yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configure Google" })).toBeInTheDocument();
+    expect(screen.queryByText("Ready to connect")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect Google" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
+  });
+
+  it("shows Connecting while Google sign-in is starting", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={gmail({ availability: "available", configured: true })}
+        onSend={async () => result}
+        onStartOauth={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect Google" }));
+
+    expect(screen.getByText("Connecting")).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+    expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
+  });
+
+  it("shows the connected Gmail mailbox and can sync or disconnect it", async () => {
+    const onSync = vi.fn(async () => undefined);
+    const onDisconnect = vi.fn(async () => undefined);
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={gmail({
+          availability: "connected",
+          configured: true,
+          accountLabel: "john@example.com",
+          listening: false,
+          realtime: "manual",
+        })}
+        onSend={async () => result}
+        onSync={onSync}
+        onDisconnect={onDisconnect}
+      />,
+    );
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("Gmail mailbox:")).toBeInTheDocument();
+    expect(screen.getByText("john@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Your Gmail messages are available to VIGIE for analysis.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect Google" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    });
+    expect(onSync).toHaveBeenCalledWith("gmail");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    });
+    expect(onDisconnect).toHaveBeenCalledWith("gmail");
+  });
+
+  it("shows Syncing instead of Sync now while Gmail is importing", async () => {
+    let finish: () => void = () => undefined;
+    const onSync = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => resolve();
+        }),
+    );
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={gmail({
+          availability: "connected",
+          configured: true,
+          accountLabel: "john@example.com",
+        })}
+        onSend={async () => result}
+        onSync={onSync}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    });
+
+    expect(await screen.findByText("Syncing")).toBeInTheDocument();
+    expect(screen.getByText("Importing new Gmail conversations...")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
+    await act(async () => {
+      finish();
+    });
+  });
+
+  it("asks to reconnect Google when the mailbox needs attention", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={gmail({
+          availability: "error",
+          configured: true,
+          lastError: "Gmail needs to be reconnected.",
+        })}
+        onSend={async () => result}
+      />,
+    );
+
+    expect(screen.getByText("Needs attention")).toBeInTheDocument();
+    expect(screen.getByText(/Reconnect your Google account to continue/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect Google" })).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+    expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
   });
 
   it("says the Gmail watch is not active when listening has stopped", () => {
@@ -99,7 +228,8 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("Gmail mailbox: ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Gmail mailbox:")).toBeInTheDocument();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByText("Automatic updates need attention.")).toBeInTheDocument();
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Listening for new messages")).not.toBeInTheDocument();
@@ -115,7 +245,8 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Ready to connect")).toBeInTheDocument();
-    expect(screen.getByText(/Connect Microsoft to bring an Outlook mailbox/)).toBeInTheDocument();
+    expect(screen.getByText(/Connect your Microsoft account to bring Outlook conversations/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Microsoft" })).toBeInTheDocument();
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
@@ -139,9 +270,11 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("Outlook mailbox: ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Outlook mailbox:")).toBeInTheDocument();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Your Outlook mailbox is connected to VIGIE.")).toBeInTheDocument();
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
-    expect(screen.getByText(/does not send email/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect Microsoft" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable real-time listening" })).not.toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
@@ -151,6 +284,56 @@ describe("integrations", () => {
       fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     });
     expect(onDisconnect).toHaveBeenCalledWith("microsoft365");
+  });
+
+  it("shows syncing instead of Sync now while Outlook is importing", async () => {
+    let finish: () => void = () => undefined;
+    const onSync = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => resolve();
+        }),
+    );
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={microsoft({
+          availability: "connected",
+          configured: true,
+          accountLabel: "ada@example.com",
+        })}
+        onSend={async () => result}
+        onSync={onSync}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    });
+
+    expect(await screen.findByText("Syncing")).toBeInTheDocument();
+    expect(screen.getByText("Importing new Outlook conversations...")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect Microsoft" })).not.toBeInTheDocument();
+    await act(async () => {
+      finish();
+    });
+  });
+
+  it("returns Microsoft to ready to connect after disconnect", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={microsoft({ availability: "disconnected", configured: true, accountLabel: "ada@example.com" })}
+        onSend={async () => result}
+      />,
+    );
+
+    expect(screen.getByText("Ready to connect")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Microsoft" })).toBeInTheDocument();
+    expect(screen.queryByText("ada@example.com")).not.toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
   });
 
   it("asks to reconnect Microsoft when the mailbox needs attention", () => {
@@ -167,7 +350,7 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Needs attention")).toBeInTheDocument();
-    expect(screen.getAllByText("Reconnect your Microsoft account.").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Reconnect your Microsoft account to continue/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reconnect Microsoft" })).toBeInTheDocument();
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();

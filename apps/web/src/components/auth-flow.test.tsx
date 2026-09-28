@@ -42,7 +42,7 @@ import { AuthForm } from "@/components/auth-form";
 import { DemoEntry } from "@/components/demo-entry";
 import { IntegrationsPanel } from "@/components/integrations-panel";
 import { OnboardingForm } from "@/components/onboarding-form";
-import { PrimaryNav } from "@/components/primary-nav";
+import { BrandLink, PrimaryNav } from "@/components/primary-nav";
 import { SessionGate, SessionProvider } from "@/components/session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -158,15 +158,36 @@ describe("authentication flow", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("do not match");
   });
 
+  it("hides the workspace from a signed-out visitor", async () => {
+    auth.loadSession.mockRejectedValue(new ApiError(401));
+    render(
+      <SessionProvider>
+        <BrandLink />
+        <PrimaryNav />
+      </SessionProvider>,
+    );
+    expect(await screen.findByRole("link", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "VIGIE" })).toHaveAttribute("href", "/about");
+    expect(screen.getByRole("link", { name: "Demo" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "About" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Command Center" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Integrations" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Log out" })).not.toBeInTheDocument();
+  });
+
   it("logs out", async () => {
     auth.loadSession.mockResolvedValue(session);
     auth.logout.mockResolvedValue(undefined);
     render(
       <SessionProvider>
+        <BrandLink />
         <PrimaryNav />
       </SessionProvider>,
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+    expect(await screen.findByRole("link", { name: "Command Center" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Integrations" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "VIGIE" })).toHaveAttribute("href", "/");
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     await waitFor(() => expect(auth.logout).toHaveBeenCalled());
   });
 

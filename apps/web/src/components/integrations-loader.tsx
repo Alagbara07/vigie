@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -23,7 +24,15 @@ import {
 } from "@/lib/api/integrations";
 import { loadDemoMode } from "@/lib/api/system";
 
+function connectionNotice(result: string | null): string | null {
+  if (result === "error") {
+    return "The connection could not be completed. Try connecting again.";
+  }
+  return null;
+}
+
 export function IntegrationsLoader() {
+  const connectionResult = useSearchParams().get("connection");
   const [phase, setPhase] = useState<"loading" | "error" | "ready">("loading");
   const [demoEnabled, setDemoEnabled] = useState(false);
   const [businessId, setBusinessId] = useState<string | null>(null);
@@ -64,8 +73,17 @@ export function IntegrationsLoader() {
     const timer = window.setTimeout(() => {
       void load();
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
+    const refreshIfRestored = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        void load();
+      }
+    };
+    window.addEventListener("pageshow", refreshIfRestored);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pageshow", refreshIfRestored);
+    };
+  }, [load, connectionResult]);
 
   return (
     <AppShell>
@@ -108,6 +126,7 @@ export function IntegrationsLoader() {
               setChannels(await loadChannels(businessId));
             }
           }}
+          connectionNotice={connectionNotice(connectionResult)}
           onSend={async ({ customerName, text }) => {
             const slug = customerName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "customer";
             return sendDemoMessage({

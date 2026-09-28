@@ -42,20 +42,20 @@ export function channelStatusTone(availability: ChannelAvailability): "muted" | 
   return "neutral";
 }
 
-export function connectedAccountLine(channel: ChannelStatus): string | null {
+export function connectedAccount(channel: ChannelStatus): { label: string; value: string } | null {
   if (channel.availability !== "connected" || !channel.accountLabel) {
     return null;
   }
   if (channel.provider === "gmail") {
-    return `Gmail mailbox: ${channel.accountLabel}`;
+    return { label: "Gmail mailbox", value: channel.accountLabel };
   }
   if (channel.provider === "microsoft365") {
-    return `Outlook mailbox: ${channel.accountLabel}`;
+    return { label: "Outlook mailbox", value: channel.accountLabel };
   }
   if (channel.provider === "whatsapp") {
-    return `WhatsApp number: ${channel.accountLabel}`;
+    return { label: "WhatsApp number", value: channel.accountLabel };
   }
-  return channel.accountLabel;
+  return { label: "Account", value: channel.accountLabel };
 }
 
 export function userFacingError(message: string): string {

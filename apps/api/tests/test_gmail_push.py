@@ -339,6 +339,13 @@ def test_disconnected_mailbox_is_not_processed(
     assert delivered.status_code == 200
     assert delivered.json()["stored"] == 0
     assert _count(db_session, Message, business.id) == 0
+    row = db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id))
+    assert row is not None
+    assert row.external_account_id is None
+    assert row.connection_metadata == {}
+    assert db_session.get(IntegrationCredential, row.id) is None
+    blocked = api_client.post("/api/integrations/gmail/sync", params={"business_id": str(business.id)})
+    assert blocked.status_code == 404
 
 
 def test_renewal_continues_when_one_mailbox_fails(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -24,11 +24,13 @@ router = APIRouter(prefix="/api")
 
 @router.get("/integrations", response_model=list[ChannelStatusRead])
 def get_integrations(
+    response: Response,
     business_id: uuid.UUID = Query(),
     principal: Principal = Depends(require_member),
     session: Session = Depends(get_db),
 ) -> list[dict]:
     del principal
+    response.headers["Cache-Control"] = "no-store"
     try:
         return list_channels(session, business_id)
     except NotFoundError as exc:

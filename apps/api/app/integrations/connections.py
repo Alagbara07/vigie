@@ -68,7 +68,7 @@ def list_channels(session: Session, business_id: uuid.UUID, settings: Settings |
                 "label": item["label"],
                 "description": item["description"],
                 "availability": _availability(provider, row, active),
-                "account_label": None if row is None else row.display_name or row.external_account_id,
+                "account_label": _account_label(row),
                 "connected_at": None if row is None else row.connected_at,
                 "last_sync_at": None if row is None else row.last_sync_at,
                 "last_error": last_error,
@@ -109,6 +109,8 @@ def disconnect(session: Session, business_id: uuid.UUID, provider: IntegrationPr
     row.status = ConnectionStatus.DISCONNECTED.value
     row.external_account_id = None
     row.connected_at = None
+    if provider is IntegrationProvider.GMAIL:
+        row.connection_metadata = {}
     secret = session.get(IntegrationCredential, row.id)
     if secret is not None:
         session.delete(secret)
@@ -295,6 +297,17 @@ def _require_connection(
     if row is None:
         raise NotFoundError("This channel is not connected.")
     return row
+
+
+def _account_label(row: ChannelConnection | None) -> str | None:
+    if row is None:
+        return None
+    meta = row.connection_metadata if isinstance(row.connection_metadata, dict) else {}
+    mail = meta.get("mail")
+    if isinstance(mail, str) and mail.strip():
+        return mail.strip()
+    name = row.display_name or row.external_account_id
+    return name.strip() if isinstance(name, str) and name.strip() else None
 
 
 def _webhook_url(provider: IntegrationProvider, settings: Settings) -> str | None:

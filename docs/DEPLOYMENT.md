@@ -119,6 +119,8 @@ Gmail OAuth redirect:
 {API_PUBLIC_URL}/api/integrations/gmail/callback
 ```
 
+Gmail requests OpenID, email, profile, and Gmail readonly, with offline access. It does not send or modify mail. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required on the Render API before the card can say Ready to connect. `GOOGLE_REDIRECT_URI` can stay empty so the API derives the callback from `API_PUBLIC_URL`. Pub/Sub is required only for automatic listening. Sync now works without it. The renewal cron needs the same Google and Pub/Sub values as the API when listening is enabled.
+
 Microsoft OAuth redirect:
 
 ```text

@@ -6,17 +6,33 @@ import { usePathname } from "next/navigation";
 import { logout } from "@/lib/api/auth";
 import { useSession } from "@/components/session-provider";
 
-const NAV = [
-  { href: "/", label: "Command Center" },
+const PUBLIC_NAV = [
   { href: "/demo", label: "Demo" },
   { href: "/about", label: "About" },
+] as const;
+
+const PRIVATE_NAV = [
+  { href: "/", label: "Command Center" },
   { href: "/settings/integrations", label: "Integrations" },
 ] as const;
+
+export function BrandLink() {
+  const { session } = useSession();
+  const signedIn = session != null;
+  return (
+    <Link href={signedIn ? "/" : "/about"} className="text-sm font-semibold tracking-[0.22em]">
+      VIGIE
+    </Link>
+  );
+}
 
 export function PrimaryNav() {
   const pathname = usePathname();
   const { session } = useSession();
   const signedIn = session != null;
+  const items = signedIn
+    ? [PRIVATE_NAV[0], ...PUBLIC_NAV, PRIVATE_NAV[1]]
+    : PUBLIC_NAV;
 
   async function signOut() {
     await logout();
@@ -28,7 +44,7 @@ export function PrimaryNav() {
 
   return (
     <nav aria-label="Primary" className="mt-4 flex flex-wrap gap-x-4 gap-y-1 md:mt-8 md:flex-col md:gap-1">
-      {NAV.map((item) => {
+      {items.map((item) => {
         const current = pathname === item.href;
         return (
           <Link
