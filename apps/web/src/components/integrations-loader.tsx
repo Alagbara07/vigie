@@ -111,13 +111,19 @@ export function IntegrationsLoader() {
             window.location.assign(oauthConnectPath(provider, businessId));
           }}
           onSync={async (provider) => {
-            if (provider === "gmail") {
-              await syncGmail(businessId);
-              setChannels(await loadChannels(businessId));
-            }
-            if (provider === "microsoft365") {
-              await syncMicrosoft(businessId);
-              setChannels(await loadChannels(businessId));
+            try {
+              if (provider === "gmail") {
+                await syncGmail(businessId);
+              }
+              if (provider === "microsoft365") {
+                await syncMicrosoft(businessId);
+              }
+            } finally {
+              try {
+                setChannels(await loadChannels(businessId));
+              } catch {
+                // The sync error is the one the panel should show.
+              }
             }
           }}
           onEnableListening={async (provider) => {

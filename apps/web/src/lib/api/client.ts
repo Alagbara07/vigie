@@ -1,10 +1,12 @@
 export class ApiError extends Error {
   readonly status: number | null;
+  readonly detail: string | null;
 
-  constructor(status: number | null = null) {
+  constructor(status: number | null = null, detail: string | null = null) {
     super("VIGIE can't reach the intelligence service.");
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -23,7 +25,7 @@ export async function apiGet<T>(path: string, parse: (value: unknown) => T): Pro
     throw new ApiError();
   }
   if (!response.ok) {
-    throw new ApiError(response.status);
+    throw new ApiError(response.status, await safeDetail(response));
   }
   try {
     return parse(await response.json());
@@ -49,7 +51,7 @@ export async function apiPost<T>(path: string, body: unknown, parse: (value: unk
     throw new ApiError();
   }
   if (!response.ok) {
-    throw new ApiError(response.status);
+    throw new ApiError(response.status, await safeDetail(response));
   }
   try {
     return parse(await response.json());
@@ -58,6 +60,22 @@ export async function apiPost<T>(path: string, body: unknown, parse: (value: unk
       throw error;
     }
     throw new ApiError(response.status);
+  }
+}
+
+async function safeDetail(response: Response): Promise<string | null> {
+  try {
+    const payload: unknown = await response.json();
+    if (typeof payload !== "object" || payload === null || !("detail" in payload)) {
+      return null;
+    }
+    const detail = payload.detail;
+    if (typeof detail !== "string" || detail.length === 0 || detail.length > 200) {
+      return null;
+    }
+    return detail;
+  } catch {
+    return null;
   }
 }
 

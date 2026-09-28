@@ -89,7 +89,7 @@ describe("IntegrationsLoader", () => {
     render(<IntegrationsLoader />);
 
     expect(await screen.findByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("Outlook mailbox:")).toBeInTheDocument();
+    expect(screen.getByText("Connected Outlook mailbox:")).toBeInTheDocument();
     expect(screen.getByText("john@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();

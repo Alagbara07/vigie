@@ -182,6 +182,7 @@ def test_whatsapp_disconnect_stops_routing_and_hides_credentials(api_client: Tes
     assert connected.status_code == 200
     assert disconnected.status_code == 200
     assert disconnected.json()["availability"] == "disconnected"
+    assert disconnected.json()["account_label"] is None
     assert delivered.json()["stored"] == 0
     row = db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id))
     assert row is not None
@@ -314,6 +315,7 @@ def test_microsoft_oauth_normalizes_and_rejects_a_bad_state(
     assert message.content == PROMISE
     assert message.message_metadata["subject"] == "Balance"
     assert disconnected.json()["availability"] == "disconnected"
+    assert disconnected.json()["account_label"] is None
     secret = db_session.get(IntegrationCredential, _connection_id(db_session, business.id, "microsoft365"))
     assert secret is None
     assert "access_token" not in repr(IntegrationCredential(connection_id=uuid.uuid4(), access_token=TOKEN))
@@ -576,6 +578,7 @@ def test_gmail_invalid_refresh_requires_reconnection(
     assert failed.json()["detail"] == "Gmail needs to be reconnected."
     gmail = next(item for item in listed.json() if item["provider"] == "gmail")
     assert gmail["availability"] == "error"
+    assert gmail["account_label"] == "amaka@example.com"
     assert gmail["last_error"] == "Gmail needs to be reconnected."
     assert TOKEN not in listed.text
     assert REFRESH not in listed.text
@@ -631,8 +634,112 @@ def test_gmail_sync_handles_an_empty_or_malformed_mailbox(
     assert failed.status_code == 409
     assert failed.json()["detail"] == "VIGIE could not sync Gmail."
     gmail = next(item for item in listed.json() if item["provider"] == "gmail")
-    assert gmail["availability"] == "error"
+    assert gmail["availability"] == "connected"
+    assert gmail["last_error"] == "VIGIE could not sync Gmail."
     assert _count(db_session, Message, business.id) == 0
+
+
+def test_gmail_sync_refreshes_a_rejected_token_and_reads_nested_mail(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from app.integrations.gmail import GmailNotFound, GmailUnauthorized
+
+    business = _business(db_session, "gmail-nested")
+    calls = {"list": 0}
+
+    def tokens(url: str, data: dict[str, str]) -> dict:
+        if data.get("grant_type") == "refresh_token":
+            assert data["refresh_token"] == REFRESH
+            return {"access_token": "gmail-refreshed-token", "expires_in": 3600}
+        return _gmail_token(url, data)
+
+    def fetch(url: str, access_token: str) -> dict:
+        if "messages?" in url:
+            calls["list"] += 1
+            if access_token == TOKEN:
+                raise GmailUnauthorized()
+            assert access_token == "gmail-refreshed-token"
+            return {"messages": [{"id": "nested-1"}, {"id": "missing-1"}, {"id": "html-1"}]}
+        if access_token != "gmail-refreshed-token":
+            raise AssertionError(access_token)
+        if url.endswith("/missing-1?format=full"):
+            raise GmailNotFound()
+        if url.endswith("/html-1?format=full"):
+            return {
+                "id": "html-1",
+                "threadId": "thread-html",
+                "snippet": "Please send the invoice.",
+                "internalDate": str(int(WHEN.timestamp() * 1000)),
+                "payload": {
+                    "mimeType": "text/html",
+                    "headers": [
+                        {"name": "From", "value": "Ada Buyer <ada@example.com>"},
+                        {"name": "Subject", "value": "Invoice"},
+                    ],
+                    "body": {"data": _b64("<p>Please send the invoice.</p>")},
+                },
+            }
+        return {
+            "id": "nested-1",
+            "threadId": "thread-nested",
+            "snippet": "short",
+            "internalDate": str(int(WHEN.timestamp() * 1000)),
+            "payload": {
+                "mimeType": "multipart/mixed",
+                "headers": [
+                    {"name": "From", "value": "Amaka Bello <amaka@example.com>"},
+                    {"name": "Subject", "value": "Balance"},
+                ],
+                "parts": [
+                    {
+                        "mimeType": "multipart/alternative",
+                        "parts": [
+                            {
+                                "mimeType": "text/plain",
+                                "body": {"data": _b64(PROMISE)},
+                            },
+                            {"mimeType": "text/html", "body": {"data": _b64("<p>ignored</p>")}},
+                        ],
+                    }
+                ],
+            },
+        }
+
+    monkeypatch.setattr("app.integrations.gmail.post_form", tokens)
+    monkeypatch.setattr("app.integrations.gmail.get_json", _gmail_get)
+    monkeypatch.setattr("app.integrations.gmail.gmail_get", fetch)
+    with _env(
+        GOOGLE_CLIENT_ID="google-client",
+        GOOGLE_CLIENT_SECRET=SECRET,
+        GOOGLE_REDIRECT_URI="https://vigie-api.example/api/integrations/gmail/callback",
+    ), caplog.at_level(logging.DEBUG):
+        started = api_client.get(
+            "/api/integrations/gmail/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        api_client.get(
+            "/api/integrations/gmail/callback",
+            params={"code": "auth-code", "state": state},
+            follow_redirects=False,
+        )
+        synced = api_client.post("/api/integrations/gmail/sync", params={"business_id": str(business.id)})
+    assert synced.status_code == 200
+    assert synced.json()["stored"] == 2
+    assert calls["list"] == 2
+    messages = db_session.scalars(select(Message).where(Message.business_id == business.id)).all()
+    by_external = {message.external_message_id: message.content for message in messages}
+    assert by_external["nested-1"] == PROMISE
+    assert by_external["html-1"] == "Please send the invoice."
+    assert "missing-1" not in by_external
+    assert TOKEN not in caplog.text
+    assert REFRESH not in caplog.text
+    assert "gmail-refreshed-token" not in caplog.text
+    assert PROMISE not in caplog.text
 
 
 def test_gmail_connect_is_unavailable_until_configured(api_client: TestClient, db_session: Session) -> None:

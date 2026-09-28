@@ -335,6 +335,7 @@ def test_disconnected_mailbox_is_not_processed(
         )
     assert disconnected.status_code == 200
     assert disconnected.json()["availability"] == "disconnected"
+    assert disconnected.json()["account_label"] is None
     assert "gmail-access-token" not in disconnected.text
     assert delivered.status_code == 200
     assert delivered.json()["stored"] == 0
@@ -376,6 +377,29 @@ def test_renewal_continues_when_one_mailbox_fails(db_session: Session, monkeypat
     errors = [first_row.connection_metadata.get("watch_error"), second_row.connection_metadata.get("watch_error")]
     assert errors.count("Real-time listening could not be renewed.") == 1
     assert any(row.connection_metadata.get("watch_enabled") is True for row in (first_row, second_row))
+
+
+def test_error_keeps_the_mailbox_and_pauses_only_an_existing_watch(api_client: TestClient, db_session: Session) -> None:
+    business = _business(db_session, "gmail-error-state")
+    row = _connect(db_session, business, EMAIL)
+    row.status = "error"
+    row.last_error = "Gmail needs to be reconnected."
+    db_session.commit()
+    listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+    gmail = _gmail_status(listed.json())
+    assert gmail["availability"] == "error"
+    assert gmail["account_label"] == EMAIL
+    assert gmail["realtime"] == "not_configured"
+
+    meta = dict(row.connection_metadata or {})
+    meta["watch_attempted"] = True
+    row.connection_metadata = meta
+    db_session.commit()
+    watched = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+    paused = _gmail_status(watched.json())
+    assert paused["availability"] == "error"
+    assert paused["account_label"] == EMAIL
+    assert paused["realtime"] == "needs_attention"
 
 
 def test_manual_status_when_pubsub_is_not_configured(api_client: TestClient, db_session: Session) -> None:

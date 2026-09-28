@@ -300,7 +300,7 @@ def _require_connection(
 
 
 def _account_label(row: ChannelConnection | None) -> str | None:
-    if row is None:
+    if row is None or row.status == ConnectionStatus.DISCONNECTED.value:
         return None
     meta = row.connection_metadata if isinstance(row.connection_metadata, dict) else {}
     mail = meta.get("mail")

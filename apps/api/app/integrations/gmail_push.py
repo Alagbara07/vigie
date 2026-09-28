@@ -207,6 +207,16 @@ def apply_gmail_history(
     return stored
 
 
+def _watch_needs_recovery(row: ChannelConnection) -> bool:
+    meta = _metadata(row)
+    if meta.get("watch_enabled") is True or meta.get("watch_attempted") is True:
+        return True
+    watch_error = meta.get("watch_error")
+    if isinstance(watch_error, str) and watch_error.strip():
+        return True
+    return _parse_time(meta.get("watch_expiration")) is not None
+
+
 def gmail_realtime_fields(row: ChannelConnection | None, settings: Settings) -> dict:
     fields = {
         "listening": False,
@@ -216,7 +226,7 @@ def gmail_realtime_fields(row: ChannelConnection | None, settings: Settings) -> 
         "pubsub_configured": settings.gmail_pubsub_configured(),
     }
     if row is None or row.status != ConnectionStatus.CONNECTED.value:
-        if row is not None and row.status == ConnectionStatus.ERROR.value:
+        if row is not None and row.status == ConnectionStatus.ERROR.value and _watch_needs_recovery(row):
             fields["realtime"] = "needs_attention"
         return fields
     meta = _metadata(row)

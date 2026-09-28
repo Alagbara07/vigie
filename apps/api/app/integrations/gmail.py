@@ -45,6 +45,27 @@ class HistoryUnavailable(ProviderError):
     """Gmail no longer has changes from the stored history id."""
 
 
+class GmailUnauthorized(ProviderError):
+    """Gmail rejected the access token. A stored refresh token may still be valid."""
+
+    def __init__(self) -> None:
+        super().__init__(_RECONNECT)
+
+
+class GmailNotFound(ProviderError):
+    def __init__(self) -> None:
+        super().__init__("Gmail message is no longer available.")
+
+
+class GmailForbidden(ProviderError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(_RECONNECT if reason in _SCOPE_REASONS else _SYNC_FAILURE)
+
+
+_SCOPE_REASONS = {"insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"}
+
+
 class GmailAdapter:
     provider = IntegrationProvider.GMAIL
 
@@ -76,7 +97,7 @@ class GmailAdapter:
         headers = _headers(payload.get("payload"))
         name, email = parseaddr(headers.get("from", ""))
         email = email.strip().lower()
-        text = _plain_text(payload.get("payload"))
+        text = _plain_text(payload.get("payload")) or _visible_text(str(payload.get("snippet") or ""))
         if not message_id or not email or not text:
             return None
         try:
@@ -176,31 +197,61 @@ def sync_gmail(session: Session, business_id: uuid.UUID) -> dict[str, int]:
         mark_sync(session, connection.id, None, failed=False)
         logger.info("Synced Gmail business=%s stored=%s", business_id, stored)
         return {"stored": stored}
-    except ProviderError:
-        mark_sync(session, connection.id, _SYNC_FAILURE, failed=True)
-        raise ProviderError(_SYNC_FAILURE) from None
-    except (AIProviderError, InvalidProposalError) as exc:
+    except ProviderError as exc:
+        reconnect = str(exc) == _RECONNECT
+        mark_sync(session, connection.id, _RECONNECT if reconnect else _SYNC_FAILURE, failed=reconnect)
+        logger.warning(
+            "Gmail sync failed business=%s stage=import category=%s",
+            business_id,
+            "reconnect" if reconnect else "provider",
+        )
+        raise ProviderError(_RECONNECT if reconnect else _SYNC_FAILURE) from None
+    except (AIProviderError, InvalidProposalError):
         mark_sync(session, connection.id, "VIGIE could not interpret the latest message.", failed=False)
-        raise ProviderError(_SYNC_FAILURE) from exc
+        logger.warning("Gmail sync failed business=%s stage=analysis category=interpretation", business_id)
+        raise ProviderError(_SYNC_FAILURE) from None
 
 
 def import_recent_messages(session: Session, connection: ChannelConnection, access_token: str) -> int:
-    listing = gmail_get(_LIST_URL, access_token)
+    holder = {"token": access_token}
+
+    def fetch(url: str) -> dict:
+        try:
+            return gmail_get(url, holder["token"])
+        except GmailUnauthorized:
+            logger.info("Gmail access token was rejected; refreshing business=%s", connection.business_id)
+            holder["token"] = access_token_for(session, connection, force_refresh=True)
+            return gmail_get(url, holder["token"])
+
+    listing = fetch(_LIST_URL)
     messages = listing.get("messages") if isinstance(listing.get("messages"), list) else []
     stored = 0
     for item in messages:
         if not isinstance(item, dict) or not item.get("id"):
             continue
-        resource = gmail_get(message_url(str(item["id"])), access_token)
+        try:
+            resource = _read_message(fetch, str(item["id"]))
+        except GmailNotFound:
+            logger.info("Gmail sync skipped a missing message business=%s", connection.business_id)
+            continue
+        except GmailForbidden as exc:
+            if exc.reason in _SCOPE_REASONS:
+                raise ProviderError(_RECONNECT) from None
+            logger.warning(
+                "Gmail sync skipped a message business=%s stage=message reason=%s",
+                connection.business_id,
+                exc.reason,
+            )
+            continue
         if _store_gmail_resource(session, connection.business_id, resource):
             stored += 1
     return stored
 
 
-def access_token_for(session: Session, connection: ChannelConnection) -> str:
+def access_token_for(session: Session, connection: ChannelConnection, *, force_refresh: bool = False) -> str:
     secret = session.get(IntegrationCredential, connection.id)
     token = plaintext_access_token(secret)
-    if secret is not None and _token_is_current(secret.expires_at):
+    if not force_refresh and secret is not None and _token_is_current(secret.expires_at):
         return token
     refresh = open_secret(secret.refresh_token) if secret is not None and secret.refresh_token else None
     if not refresh:
@@ -251,7 +302,10 @@ def _store_gmail_resource(session: Session, business_id: uuid.UUID, resource: di
     result = ingest_message(session, incoming)
     if not result.created:
         return False
-    schedule_message_analysis(session, result.message.id, business_id, incoming.timestamp)
+    try:
+        schedule_message_analysis(session, result.message.id, business_id, incoming.timestamp)
+    except (AIProviderError, InvalidProposalError):
+        logger.warning("Gmail message stored but not interpreted business=%s stage=analysis", business_id)
     return True
 
 
@@ -281,9 +335,21 @@ def _gmail_request(method: str, url: str, access_token: str, payload: dict | Non
 
 
 def _gmail_payload(response: httpx.Response) -> dict:
-    if response.status_code == 404:
+    if response.status_code == 404 and "/history" in str(response.request.url):
         raise HistoryUnavailable("Gmail history is no longer available.")
+    if response.status_code == 404:
+        raise GmailNotFound()
+    if response.status_code == 401:
+        status, reason = _google_failure(response)
+        logger.warning("Gmail request rejected status=%s reason=%s stage=auth", status, reason)
+        raise GmailUnauthorized()
+    if response.status_code == 403:
+        status, reason = _google_failure(response)
+        logger.warning("Gmail request rejected status=%s reason=%s stage=permission", status, reason)
+        raise GmailForbidden(reason)
     if response.status_code >= 400:
+        status, reason = _google_failure(response)
+        logger.warning("Gmail request rejected status=%s reason=%s stage=provider", status, reason)
         raise ProviderError(_SYNC_FAILURE)
     try:
         payload = response.json()
@@ -308,17 +374,68 @@ def _headers(payload: object) -> dict[str, str]:
     return found
 
 
+def _read_message(fetch, message_id: str) -> dict:
+    try:
+        return fetch(message_url(message_id))
+    except GmailForbidden as exc:
+        if exc.reason not in _SCOPE_REASONS:
+            raise
+        logger.warning("Gmail full message unavailable reason=%s", exc.reason)
+        return fetch(_metadata_url(message_id))
+
+
+def _metadata_url(message_id: str) -> str:
+    return (
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/"
+        f"{message_id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject"
+    )
+
+
+def _google_failure(response: httpx.Response) -> tuple[int, str]:
+    reason = "unknown"
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            errors = error.get("errors")
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                raw = errors[0].get("reason")
+                if isinstance(raw, str) and raw.strip():
+                    reason = raw.strip()
+            elif isinstance(error.get("status"), str) and error.get("status").strip():
+                reason = error["status"].strip()
+        elif error in {"invalid_grant", "invalid_client", "unauthorized_client"}:
+            reason = str(error)
+    cleaned = re.sub(r"[^A-Za-z0-9_.:-]", "", reason)[:80]
+    return response.status_code, cleaned or "unknown"
+
+
 def _plain_text(payload: object) -> str:
     if not isinstance(payload, dict):
         return ""
-    direct = _decode(payload.get("body"))
-    if direct.strip():
-        return _visible_text(direct)
+    plain = _find_part(payload, "text/plain")
+    if plain:
+        return _visible_text(plain)
+    html = _find_part(payload, "text/html")
+    if html:
+        return _visible_text(re.sub(r"<[^>]+>", " ", html))
+    return ""
+
+
+def _find_part(payload: dict, mime_type: str) -> str:
+    mime = str(payload.get("mimeType") or "")
+    if mime.startswith(mime_type):
+        text = _decode(payload.get("body")).strip()
+        if text:
+            return text
     for part in payload.get("parts") or []:
-        if isinstance(part, dict) and part.get("mimeType") == "text/plain":
-            text = _decode(part.get("body"))
-            if text.strip():
-                return _visible_text(text)
+        if isinstance(part, dict):
+            found = _find_part(part, mime_type)
+            if found:
+                return found
     return ""
 
 
