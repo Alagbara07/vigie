@@ -1,6 +1,6 @@
 /// <reference types="vitest/globals" />
 import type { ChannelStatus } from "@/lib/api/integrations";
-import { integrationView } from "@/lib/ux";
+import { connectionFailureDetail, integrationView } from "@/lib/ux";
 
 const providers = [
   ["gmail", "Google"],
@@ -180,5 +180,69 @@ describe("integration state", () => {
     expect(view.primary).toBeNull();
     expect(view.sync).toBe(false);
     expect(view.disconnect).toBe(false);
+  });
+
+  it.each(providers)("keeps a failed first %s connection on that provider", (provider, name) => {
+    const detail = connectionFailureDetail(provider);
+    const issue = { provider, detail, connection: true as const };
+    const failed = integrationView(
+      channel({ provider, availability: "available", configured: true, accountLabel: "leaked@example.com" }),
+      null,
+      issue,
+    );
+    const other = integrationView(
+      channel({
+        provider: provider === "gmail" ? "microsoft365" : "gmail",
+        availability: "available",
+        configured: true,
+      }),
+      null,
+      issue,
+    );
+
+    expect(failed.phase).toBe("needs_attention");
+    expect(failed.badge).toBe("Needs attention");
+    expect(failed.summary).toBe(detail);
+    expect(failed.primary).toEqual({ label: `Connect ${name}`, kind: "connect" });
+    expect(failed.resource).toBeNull();
+    expect(failed.sync).toBe(false);
+    expect(failed.disconnect).toBe(false);
+    expect(failed.notice).toBeNull();
+    expect(other.summary).not.toBe(detail);
+    expect(other.phase).toBe("ready");
+  });
+
+  it.each(providers)("keeps a failed %s reconnect on the saved account", (provider, name) => {
+    const detail = connectionFailureDetail(provider);
+    const view = integrationView(
+      channel({
+        provider,
+        availability: "error",
+        configured: true,
+        accountLabel: provider === "whatsapp" ? "+2348000000000" : "ada@example.com",
+      }),
+      null,
+      { provider, detail, connection: true },
+    );
+
+    expect(view.phase).toBe("needs_attention");
+    expect(view.summary).toBe(detail);
+    expect(view.primary).toEqual({ label: `Reconnect ${name}`, kind: "reconnect" });
+    expect(view.resource?.value).toBe(provider === "whatsapp" ? "+2348000000000" : "ada@example.com");
+    expect(view.sync).toBe(false);
+    expect(view.disconnect).toBe(true);
+  });
+
+  it("does not treat a sync problem as a lost connection", () => {
+    const view = integrationView(
+      channel({ provider: "gmail", availability: "connected", configured: true, accountLabel: "ada@example.com" }),
+      null,
+      { provider: "gmail", detail: "VIGIE couldn't sync Gmail. Try again.", connection: false },
+    );
+
+    expect(view.phase).toBe("connected");
+    expect(view.sync).toBe(true);
+    expect(view.notice).toBe("VIGIE couldn't sync Gmail. Try again.");
+    expect(view.summary).toBe("VIGIE imports messages for analysis. VIGIE does not send email.");
   });
 });

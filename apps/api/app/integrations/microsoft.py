@@ -28,7 +28,10 @@ from app.services.intake import schedule_message_analysis
 
 logger = logging.getLogger(__name__)
 
-_SCOPE = "offline_access https://graph.microsoft.com/Mail.Read"
+_SCOPE = (
+    "openid email offline_access "
+    "https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Read"
+)
 _ME_URL = "https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName"
 _MESSAGES_URL = (
     "https://graph.microsoft.com/v1.0/me/messages"
@@ -106,32 +109,53 @@ def complete_microsoft_oauth(
 ) -> None:
     settings = get_settings()
     if not settings.microsoft_configured():
+        logger.warning("Microsoft OAuth callback rejected category=not_configured")
         raise ProviderError("Configuration required.")
-    business_id, user_id = consume_oauth_state(
-        session,
-        state,
-        IntegrationProvider.MICROSOFT365,
-        expected_user_id,
-    )
-    tokens = post_form(
-        f"{_authority(settings)}/token",
-        {
-            "client_id": settings.microsoft_client_id,
-            "client_secret": settings.microsoft_client_secret,
-            "code": code,
-            "redirect_uri": settings.resolved_microsoft_redirect_uri(),
-            "grant_type": "authorization_code",
-            "scope": _SCOPE,
-        },
-    )
+    if not code.strip() or not state.strip():
+        logger.warning("Microsoft OAuth callback rejected category=missing_code")
+        raise ProviderError(_PROVIDER_FAILURE)
+    try:
+        business_id, user_id = consume_oauth_state(
+            session,
+            state,
+            IntegrationProvider.MICROSOFT365,
+            expected_user_id,
+        )
+    except ProviderError:
+        logger.warning("Microsoft OAuth callback rejected category=state")
+        raise
+    logger.info("Microsoft OAuth state accepted business=%s user=%s", business_id, user_id)
+    try:
+        tokens = post_form(
+            f"{_authority(settings)}/token",
+            {
+                "client_id": settings.microsoft_client_id,
+                "client_secret": settings.microsoft_client_secret,
+                "code": code,
+                "redirect_uri": settings.resolved_microsoft_redirect_uri(),
+                "grant_type": "authorization_code",
+                "scope": _SCOPE,
+            },
+        )
+    except ProviderError:
+        logger.warning("Microsoft OAuth token exchange failed business=%s category=token", business_id)
+        raise
     access_token = tokens.get("access_token")
     if not isinstance(access_token, str) or not access_token:
+        logger.warning("Microsoft OAuth token exchange failed business=%s category=token", business_id)
         raise ProviderError(_PROVIDER_FAILURE)
-    profile = get_json(_ME_URL, access_token)
+    logger.info("Microsoft OAuth token exchange succeeded business=%s", business_id)
+    try:
+        profile = get_json(_ME_URL, access_token)
+    except ProviderError:
+        logger.warning("Microsoft Graph profile lookup failed business=%s category=profile", business_id)
+        raise
     email = str(profile.get("mail") or profile.get("userPrincipalName") or "").strip().lower()
     account_id = str(profile.get("id") or email).strip()
     if not email or not account_id:
+        logger.warning("Microsoft Graph profile lookup failed business=%s category=mailbox", business_id)
         raise ProviderError(_PROVIDER_FAILURE)
+    logger.info("Microsoft Graph profile lookup succeeded business=%s mailbox=present", business_id)
     connection = save_connection(
         session,
         business_id=business_id,
@@ -157,6 +181,11 @@ def complete_microsoft_oauth(
         resource_type="integration",
         resource_id=str(connection.id),
         metadata={"provider": IntegrationProvider.MICROSOFT365.value},
+    )
+    logger.info(
+        "Microsoft connection stored business=%s connection=%s status=connected",
+        business_id,
+        connection.id,
     )
 
 

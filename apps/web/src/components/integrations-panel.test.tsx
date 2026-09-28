@@ -47,7 +47,17 @@ describe("integrations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Configure Google" }));
     fireEvent.click(screen.getByRole("button", { name: "Configure Microsoft" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("This channel is not set up yet.");
+    const microsoftCard = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
+    const googleCard = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
+    const whatsappCard = screen.getByRole("heading", { name: "WhatsApp Business" }).closest("section");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("We couldn't connect your Microsoft 365 account. Please try again.");
+    expect(microsoftCard).toHaveTextContent("Needs attention");
+    expect(microsoftCard).toHaveTextContent("Configure Microsoft");
+    expect(googleCard).not.toHaveTextContent("We couldn't connect your Microsoft 365 account");
+    expect(googleCard).toHaveTextContent("Not configured");
+    expect(whatsappCard).not.toHaveTextContent("We couldn't connect your Microsoft 365 account");
+    expect(screen.queryByText("This channel is not set up yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   });
 
@@ -610,7 +620,141 @@ describe("integrations", () => {
     expect(screen.getByRole("heading", { name: "Google Workspace" }).closest("section")).toHaveClass("bg-[var(--panel)]");
     document.documentElement.removeAttribute("data-theme");
   });
+
+  it("keeps a Microsoft connection error inside the Microsoft card", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={together()}
+        connectionIssue={{
+          provider: "microsoft365",
+          detail: "We couldn't connect your Microsoft 365 account. Please try again.",
+          connection: true,
+        }}
+        onSend={async () => result}
+      />,
+    );
+
+    const outlook = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
+    const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
+    expect(screen.getByRole("status")).toHaveTextContent("Microsoft 365 couldn't be connected.");
+    expect(outlook).toHaveTextContent("Needs attention");
+    expect(outlook).toHaveTextContent("We couldn't connect your Microsoft 365 account. Please try again.");
+    expect(outlook).toHaveTextContent("Connect Microsoft");
+    expect(google).toHaveTextContent("Ready to connect");
+    expect(google).not.toHaveTextContent("We couldn't connect your Microsoft 365 account");
+    expect(google).not.toHaveTextContent("Needs attention");
+  });
+
+  it("keeps a Google connection error inside the Google card", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={together()}
+        connectionIssue={{
+          provider: "gmail",
+          detail: "We couldn't connect your Google account. Please try again.",
+          connection: true,
+        }}
+        onSend={async () => result}
+      />,
+    );
+
+    const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
+    const outlook = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
+    expect(screen.getByRole("status")).toHaveTextContent("Google Workspace couldn't be connected.");
+    expect(google).toHaveTextContent("Needs attention");
+    expect(google).toHaveTextContent("We couldn't connect your Google account. Please try again.");
+    expect(google).toHaveTextContent("Connect Google");
+    expect(outlook).not.toHaveTextContent("We couldn't connect your Google account");
+    expect(outlook).toHaveTextContent("Ready to connect");
+  });
+
+  it("keeps a WhatsApp connection error inside the WhatsApp card", async () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={together()}
+        onConnectWhatsapp={async () => {
+          throw new ApiError(400, "HTTP 400");
+        }}
+        onSend={async () => result}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Phone number ID"), { target: { value: "123456" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect WhatsApp" }));
+    });
+
+    const whatsappCard = screen.getByRole("heading", { name: "WhatsApp Business" }).closest("section");
+    const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
+    const outlook = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
+    expect(whatsappCard).toHaveTextContent("Needs attention");
+    expect(whatsappCard).toHaveTextContent("We couldn't connect WhatsApp. Check your configuration and try again.");
+    expect(whatsappCard).toHaveTextContent("Connect WhatsApp");
+    expect(whatsappCard).not.toHaveTextContent("HTTP 400");
+    expect(google).not.toHaveTextContent("We couldn't connect WhatsApp");
+    expect(outlook).not.toHaveTextContent("We couldn't connect WhatsApp");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("asks for the WhatsApp phone number inside the WhatsApp card", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={together()}
+        onConnectWhatsapp={async () => undefined}
+        onSend={async () => result}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect WhatsApp" }));
+
+    const whatsappCard = screen.getByRole("heading", { name: "WhatsApp Business" }).closest("section");
+    const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
+    expect(whatsappCard).toHaveTextContent("Enter the WhatsApp phone number ID.");
+    expect(whatsappCard).toHaveTextContent("Ready to connect");
+    expect(google).not.toHaveTextContent("Enter the WhatsApp phone number ID.");
+  });
+
+  it("keeps a failed Microsoft reconnect on the saved mailbox", () => {
+    render(
+      <IntegrationsPanel
+        demoEnabled={false}
+        channels={microsoft({
+          availability: "error",
+          configured: true,
+          accountLabel: "ada@example.com",
+          lastSyncAt: "2026-09-28T12:00:00Z",
+        })}
+        connectionIssue={{
+          provider: "microsoft365",
+          detail: "We couldn't connect your Microsoft 365 account. Please try again.",
+          connection: true,
+        }}
+        onSend={async () => result}
+      />,
+    );
+
+    const card = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
+    expect(card).toHaveTextContent("Needs attention");
+    expect(card).toHaveTextContent("We couldn't connect your Microsoft 365 account. Please try again.");
+    expect(card).toHaveTextContent("ada@example.com");
+    expect(card).toHaveTextContent("Reconnect Microsoft");
+    expect(card).not.toHaveTextContent("Not configured");
+    expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect Microsoft" })).not.toBeInTheDocument();
+  });
 });
+
+function together(): ChannelStatus[] {
+  return [
+    ...gmail({ availability: "available", configured: true }),
+    ...microsoft({ availability: "available", configured: true }),
+    ...whatsapp({ availability: "available", configured: true, webhookUrl: "https://vigie.example/hook" }),
+  ];
+}
 
 function microsoft(overrides: Partial<ChannelStatus>): ChannelStatus[] {
   return [

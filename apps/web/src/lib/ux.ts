@@ -27,6 +27,12 @@ export type IntegrationBusy = {
   action: "connect" | "sync" | "disconnect" | "listen";
 } | null;
 
+export type IntegrationIssue = {
+  provider: string;
+  detail: string;
+  connection: boolean;
+};
+
 export type IntegrationView = {
   phase: IntegrationPhase;
   badge: string;
@@ -121,32 +127,63 @@ export function integrationPhase(channel: ChannelStatus, busy: IntegrationBusy):
   return "ready";
 }
 
-export function integrationView(channel: ChannelStatus, busy: IntegrationBusy = null): IntegrationView {
-  const phase = integrationPhase(channel, busy);
+export function connectionFailureHeadline(provider: string): string {
+  if (provider === "gmail") return "Google Workspace couldn't be connected.";
+  if (provider === "microsoft365") return "Microsoft 365 couldn't be connected.";
+  if (provider === "whatsapp") return "WhatsApp couldn't be connected.";
+  return "The connection could not be completed.";
+}
+
+export function connectionFailureDetail(provider: string): string {
+  if (provider === "gmail") return "We couldn't connect your Google account. Please try again.";
+  if (provider === "microsoft365") return "We couldn't connect your Microsoft 365 account. Please try again.";
+  if (provider === "whatsapp") return "We couldn't connect WhatsApp. Check your configuration and try again.";
+  return "We couldn't complete this connection. Please try again.";
+}
+
+export function integrationView(
+  channel: ChannelStatus,
+  busy: IntegrationBusy = null,
+  issue: IntegrationIssue | null = null,
+): IntegrationView {
+  const stored = integrationPhase(channel, busy);
+  const ownsIssue = issue?.provider === channel.provider;
+  const connectionIssue = Boolean(ownsIssue && issue?.connection);
+  const phase = connectionIssue && (stored === "ready" || stored === "not_configured") ? "needs_attention" : stored;
   const name = providerName(channel.provider);
   const active = busy?.provider === channel.provider ? busy.action : null;
-  const showResource = phase === "connected" || phase === "needs_attention" || phase === "syncing" || phase === "disconnecting";
+  const showResource = stored === "connected" || stored === "needs_attention" || stored === "syncing" || stored === "disconnecting";
   return {
     phase,
     badge: phaseBadge(phase),
     tone: phase === "needs_attention" ? "attention" : phase === "not_configured" ? "muted" : "neutral",
-    summary: phaseSummary(channel, phase, active),
+    summary: connectionIssue ? issue!.detail : phaseSummary(channel, stored, active),
     resource: showResource ? resourceLabel(channel) : null,
-    activity: activityLine(channel, phase),
-    listening: listeningLine(channel, phase),
+    activity: activityLine(channel, stored),
+    listening: listeningLine(channel, stored),
     lastReceived:
-      phase === "connected" && channel.provider === "gmail" && channel.lastNotificationAt
+      stored === "connected" && channel.provider === "gmail" && channel.lastNotificationAt
         ? `Last received: ${relativeTime(channel.lastNotificationAt, new Date())}`
         : null,
-    notice: phase === "connected" ? knownApiDetail(channel.lastError) : null,
-    webhook: phase === "ready" && channel.provider === "whatsapp" ? channel.webhookUrl ?? null : null,
-    webhookMissing: phase === "ready" && channel.provider === "whatsapp" && !channel.webhookUrl,
-    showPhoneField: channel.provider === "whatsapp" && channel.configured && (phase === "ready" || phase === "needs_attention"),
-    sync: phase === "connected" && SUPPORTS_SYNC.has(channel.provider),
-    listen: phase === "connected" && channel.provider === "gmail" && !channel.listening,
-    disconnect: phase === "connected" || phase === "needs_attention",
-    primary: primaryAction(phase, name),
+    notice: noticeFor(channel, stored, issue),
+    webhook: stored === "ready" && channel.provider === "whatsapp" ? channel.webhookUrl ?? null : null,
+    webhookMissing: stored === "ready" && channel.provider === "whatsapp" && !channel.webhookUrl,
+    showPhoneField: channel.provider === "whatsapp" && channel.configured && (stored === "ready" || stored === "needs_attention" || phase === "needs_attention"),
+    sync: stored === "connected" && SUPPORTS_SYNC.has(channel.provider),
+    listen: stored === "connected" && channel.provider === "gmail" && !channel.listening,
+    disconnect: stored === "connected" || stored === "needs_attention",
+    primary: primaryAction(stored, name),
   };
+}
+
+function noticeFor(channel: ChannelStatus, stored: IntegrationPhase, issue: IntegrationIssue | null): string | null {
+  if (issue?.provider === channel.provider && !issue.connection) {
+    return issue.detail;
+  }
+  if (stored === "connected") {
+    return knownApiDetail(channel.lastError);
+  }
+  return null;
 }
 
 function phaseBadge(phase: IntegrationPhase): string {

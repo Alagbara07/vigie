@@ -127,7 +127,7 @@ Microsoft OAuth redirect:
 {API_PUBLIC_URL}/api/integrations/microsoft/callback
 ```
 
-Microsoft uses delegated `Mail.Read` and `offline_access`. It does not send mail and it has no cron job. `MICROSOFT_TENANT_ID=common` is the authority that can accept mailboxes from more than one organization, when the Entra app is registered as multi-tenant. A directory ID restricts sign-in to that tenant.
+Microsoft uses delegated `User.Read`, `Mail.Read`, and `offline_access`, plus the OpenID `email` scope. `User.Read` is what lets the callback read the Outlook mailbox from Microsoft Graph. It does not send mail and it has no cron job. `MICROSOFT_TENANT_ID=common` is the authority that can accept mailboxes from more than one organization, when the Entra app is registered as multi-tenant. A directory ID restricts sign-in to that tenant.
 
 WhatsApp webhook:
 

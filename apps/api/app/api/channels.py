@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -18,6 +19,8 @@ from app.integrations.microsoft import MicrosoftAdapter, complete_microsoft_oaut
 from app.integrations.whatsapp import WhatsAppAdapter, receive_whatsapp_events
 from app.schemas.channels import ChannelStatusRead, DisconnectRequest, SyncRead, WhatsAppConnectRequest
 from app.services.audit import record_audit
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -250,7 +253,9 @@ def _finish_oauth(session: Session, complete, provider: str) -> RedirectResponse
     try:
         complete()
     except (ProviderError, NotFoundError, ConflictError):
-        return RedirectResponse(f"{target}?connection=error", status_code=302)
+        logger.warning("OAuth callback failed provider=%s result=error", provider)
+        return RedirectResponse(f"{target}?connection=error&provider={provider}", status_code=302)
+    logger.info("OAuth callback completed provider=%s result=connected", provider)
     return RedirectResponse(f"{target}?connection={provider}", status_code=302)
 
 

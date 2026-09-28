@@ -303,12 +303,18 @@ def test_microsoft_oauth_normalizes_and_rejects_a_bad_state(
             json={"business_id": str(business.id)},
         )
     assert "login.microsoftonline.com" in started.headers["location"]
+    assert "User.Read" in started.headers["location"]
+    assert "Mail.Read" in started.headers["location"]
+    assert "Mail.Send" not in started.headers["location"]
     assert "ms-secret" not in started.headers["location"]
     assert "connection=error" in bad.headers["location"]
     assert callback.headers["location"].endswith("/settings/integrations?connection=microsoft365")
     assert "ms-access-token" not in callback.headers["location"]
     assert synced.json()["stored"] == 1
     assert "ms-access-token" not in listed.text
+    connected = next(item for item in listed.json() if item["provider"] == "microsoft365")
+    assert connected["availability"] == "connected"
+    assert connected["account_label"] == "amaka@example.com"
     message = db_session.scalar(select(Message).where(Message.source == "microsoft365"))
     assert message is not None
     assert message.business_id == business.id
@@ -371,12 +377,173 @@ def test_microsoft_state_expires_and_cannot_be_reused(api_client: TestClient, db
         )
     assert "login.microsoftonline.com/common/" in started.headers["location"]
     assert "redirect_uri=https%3A%2F%2Fvigie-api.example%2Fapi%2Fintegrations%2Fmicrosoft%2Fcallback" in started.headers["location"]
+    assert "User.Read" in started.headers["location"]
+    assert "offline_access" in started.headers["location"]
+    assert "email" in started.headers["location"]
     assert "Mail.Read" in started.headers["location"]
     assert "Mail.Send" not in started.headers["location"]
+    assert "User.ReadWrite" not in started.headers["location"]
     assert "connection=error" in expired.headers["location"]
     assert row.used_at is not None
     assert callback.headers["location"].endswith("/settings/integrations?connection=microsoft365")
     assert "connection=error" in reused.headers["location"]
+
+
+def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from app.domain.errors import ProviderError
+
+    business = _business(db_session, "ms-profile-fail")
+    monkeypatch.setattr("app.integrations.microsoft.post_form", _microsoft_token)
+
+    def denied(url: str, access_token: str) -> dict:
+        del url, access_token
+        raise ProviderError("The provider could not complete the connection.")
+
+    monkeypatch.setattr("app.integrations.microsoft.get_json", denied)
+    logging.getLogger("app.integrations.microsoft").disabled = False
+    logging.getLogger("app.api.channels").disabled = False
+    with _env(
+        MICROSOFT_CLIENT_ID="ms-client",
+        MICROSOFT_CLIENT_SECRET="ms-secret",
+        MICROSOFT_TENANT_ID="common",
+        API_PUBLIC_URL="https://vigie-api.example",
+    ), caplog.at_level(logging.INFO):
+        started = api_client.get(
+            "/api/integrations/microsoft/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        failed = api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code", "state": state},
+            follow_redirects=False,
+        )
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+    assert "connection=error" in failed.headers["location"]
+    assert "provider=microsoft365" in failed.headers["location"]
+    microsoft = next(item for item in listed.json() if item["provider"] == "microsoft365")
+    assert microsoft["availability"] == "available"
+    assert microsoft["account_label"] is None
+    assert db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id)) is None
+    assert "Microsoft Graph profile lookup failed" in caplog.text
+    assert "ms-access-token" not in caplog.text
+    assert "ms-secret" not in caplog.text
+    assert "auth-code" not in caplog.text
+
+    def rejected(url: str, data: dict[str, str]) -> dict:
+        del url, data
+        raise ProviderError("The provider could not complete the connection.")
+
+    monkeypatch.setattr("app.integrations.microsoft.post_form", rejected)
+    caplog.clear()
+    with _env(
+        MICROSOFT_CLIENT_ID="ms-client",
+        MICROSOFT_CLIENT_SECRET="ms-secret",
+        MICROSOFT_TENANT_ID="common",
+        API_PUBLIC_URL="https://vigie-api.example",
+    ), caplog.at_level(logging.INFO):
+        started = api_client.get(
+            "/api/integrations/microsoft/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        failed = api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code", "state": state},
+            follow_redirects=False,
+        )
+    assert "connection=error" in failed.headers["location"]
+    assert "provider=microsoft365" in failed.headers["location"]
+    assert "Microsoft OAuth token exchange failed" in caplog.text
+    assert "auth-code" not in caplog.text
+    assert "ms-secret" not in caplog.text
+
+
+def test_microsoft_reconnect_failure_keeps_the_previous_mailbox(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    from app.domain.errors import ProviderError
+
+    business = _business(db_session, "ms-reconnect")
+    other = _business(db_session, "ms-reconnect-other")
+    monkeypatch.setattr("app.integrations.microsoft.post_form", _microsoft_token)
+    monkeypatch.setattr("app.integrations.microsoft.get_json", _microsoft_get)
+    with _env(
+        MICROSOFT_CLIENT_ID="ms-client",
+        MICROSOFT_CLIENT_SECRET="ms-secret",
+        MICROSOFT_TENANT_ID="common",
+        API_PUBLIC_URL="https://vigie-api.example",
+    ):
+        started = api_client.get(
+            "/api/integrations/microsoft/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code", "state": state},
+            follow_redirects=False,
+        )
+        row = db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id))
+        assert row is not None
+        secret = db_session.get(IntegrationCredential, row.id)
+        assert secret is not None and secret.access_token.startswith("fernet:")
+        stolen = api_client.get(
+            "/api/integrations/microsoft/connect",
+            params={"business_id": str(other.id)},
+            follow_redirects=False,
+        )
+        stolen_state = stolen.headers["location"].split("state=")[1].split("&")[0]
+        blocked = api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code", "state": stolen_state},
+            follow_redirects=False,
+        )
+        row.status = "error"
+        row.last_error = "Microsoft 365 needs to be reconnected."
+        db_session.commit()
+
+        def denied(url: str, access_token: str) -> dict:
+            del url, access_token
+            raise ProviderError("The provider could not complete the connection.")
+
+        monkeypatch.setattr("app.integrations.microsoft.get_json", denied)
+        retry = api_client.get(
+            "/api/integrations/microsoft/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        retry_state = retry.headers["location"].split("state=")[1].split("&")[0]
+        failed = api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code", "state": retry_state},
+            follow_redirects=False,
+        )
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+        other_listed = api_client.get("/api/integrations", params={"business_id": str(other.id)})
+    assert "connection=error" in blocked.headers["location"]
+    assert "provider=microsoft365" in blocked.headers["location"]
+    assert "connection=error" in failed.headers["location"]
+    assert "provider=microsoft365" in failed.headers["location"]
+    microsoft = next(item for item in listed.json() if item["provider"] == "microsoft365")
+    assert microsoft["availability"] == "error"
+    assert microsoft["account_label"] == "amaka@example.com"
+    other_microsoft = next(item for item in other_listed.json() if item["provider"] == "microsoft365")
+    assert other_microsoft["availability"] == "available"
+    assert other_microsoft["account_label"] is None
+    db_session.refresh(row)
+    assert row.status == "error"
+    assert row.business_id == business.id
 
 
 def test_microsoft_sync_isolates_the_business_and_refreshes_tokens(
@@ -391,6 +558,9 @@ def test_microsoft_sync_isolates_the_business_and_refreshes_tokens(
 
     def tokens(url: str, data: dict[str, str]) -> dict:
         assert "ms-secret" == data["client_secret"]
+        assert "User.Read" in data.get("scope", "")
+        assert "Mail.Read" in data.get("scope", "")
+        assert "offline_access" in data.get("scope", "")
         assert "Mail.Send" not in data.get("scope", "")
         if data.get("grant_type") == "refresh_token":
             assert data["refresh_token"] == "ms-refresh-token"
@@ -858,6 +1028,11 @@ def _gmail_get(url: str, access_token: str) -> dict:
 def _microsoft_token(url: str, data: dict[str, str]) -> dict:
     assert "ms-secret" == data["client_secret"]
     assert "common" in url
+    scope = data.get("scope", "")
+    assert "User.Read" in scope
+    assert "Mail.Read" in scope
+    assert "offline_access" in scope
+    assert "Mail.Send" not in scope
     return {"access_token": "ms-access-token", "refresh_token": "ms-refresh-token", "expires_in": 3600}
 
 

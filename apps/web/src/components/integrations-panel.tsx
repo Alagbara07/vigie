@@ -9,7 +9,14 @@ import {
   type DemoConversation,
   type DemoInboundResult,
 } from "@/lib/api/integrations";
-import { integrationView, knownApiDetail, type IntegrationView } from "@/lib/ux";
+import {
+  connectionFailureDetail,
+  connectionFailureHeadline,
+  integrationView,
+  knownApiDetail,
+  type IntegrationIssue,
+  type IntegrationView,
+} from "@/lib/ux";
 
 const CONNECTION_KEY = "vigie-demo-whatsapp";
 
@@ -64,7 +71,7 @@ export function IntegrationsPanel({
   onSync,
   onEnableListening,
   canManage = true,
-  connectionNotice = null,
+  connectionIssue = null,
 }: {
   demoEnabled: boolean;
   initiallyConnected?: boolean;
@@ -78,7 +85,7 @@ export function IntegrationsPanel({
   onSync?: (provider: string) => Promise<void>;
   onEnableListening?: (provider: string) => Promise<void>;
   canManage?: boolean;
-  connectionNotice?: string | null;
+  connectionIssue?: IntegrationIssue | null;
 }) {
   const [connected, setConnected] = useState(initiallyConnected && demoEnabled);
   const [customerName, setCustomerName] = useState("Amaka Bello");
@@ -87,7 +94,7 @@ export function IntegrationsPanel({
   const [messages, setMessages] = useState(recent);
   const [phase, setPhase] = useState<"idle" | "pending" | "sent" | "error">("idle");
   const [notice, setNotice] = useState<string | null>(null);
-  const [channelNotice, setChannelNotice] = useState<string | null>(null);
+  const [localIssue, setLocalIssue] = useState<IntegrationIssue | null>(null);
   const [busy, setBusy] = useState<{ provider: string; action: "connect" | "sync" | "disconnect" | "listen" } | null>(
     null,
   );
@@ -142,30 +149,36 @@ export function IntegrationsPanel({
     }
   }
 
+  function reportIssue(provider: string, detail: string, connection: boolean) {
+    setLocalIssue({ provider, detail, connection });
+  }
+
   async function connectChannel(channel: ChannelStatus) {
     if (!channel.configured) {
-      setChannelNotice("This channel is not set up yet.");
+      reportIssue(channel.provider, connectionFailureDetail(channel.provider), true);
       return;
     }
     if (channel.provider === "whatsapp") {
       if (!phoneNumberId.trim()) {
-        setChannelNotice("Enter the WhatsApp phone number ID.");
+        reportIssue(channel.provider, "Enter the WhatsApp phone number ID.", false);
         return;
       }
       if (!onConnectWhatsapp) {
-        setChannelNotice("This channel is not set up yet.");
+        reportIssue(channel.provider, connectionFailureDetail(channel.provider), true);
         return;
       }
       setBusy({ provider: channel.provider, action: "connect" });
-      setChannelNotice(null);
+      setLocalIssue(null);
       try {
         await onConnectWhatsapp(phoneNumberId.trim());
-        setChannelNotice(null);
+        setLocalIssue(null);
       } catch (error) {
-        setChannelNotice(
+        reportIssue(
+          channel.provider,
           error instanceof ApiError && error.status === 409
-            ? "This channel is not set up yet."
-            : "VIGIE couldn't connect WhatsApp. Try again.",
+            ? connectionFailureDetail(channel.provider)
+            : connectionFailureDetail("whatsapp"),
+          true,
         );
       } finally {
         setBusy(null);
@@ -173,7 +186,7 @@ export function IntegrationsPanel({
       return;
     }
     if (!onStartOauth) {
-      setChannelNotice("This channel is not set up yet.");
+      reportIssue(channel.provider, connectionFailureDetail(channel.provider), true);
       return;
     }
     setBusy({ provider: channel.provider, action: "connect" });
@@ -191,12 +204,16 @@ export function IntegrationsPanel({
       return;
     }
     setBusy({ provider, action: kind });
-    setChannelNotice(null);
+    setLocalIssue(null);
     try {
       await action();
     } catch (error) {
       const known = error instanceof ApiError ? knownApiDetail(error.detail) : null;
-      setChannelNotice(known ?? (error instanceof ApiError && error.status === 409 && unconfigured ? unconfigured : failure));
+      reportIssue(
+        provider,
+        known ?? (error instanceof ApiError && error.status === 409 && unconfigured ? unconfigured : failure),
+        false,
+      );
     } finally {
       setBusy(null);
     }
@@ -207,14 +224,24 @@ export function IntegrationsPanel({
       return;
     }
     setBusy({ provider: channel.provider, action: "disconnect" });
-    setChannelNotice(null);
+    setLocalIssue(null);
     try {
       await onDisconnect(channel.provider);
     } catch {
-      setChannelNotice("VIGIE couldn't disconnect that channel. Try again.");
+      reportIssue(channel.provider, "VIGIE couldn't disconnect that channel. Try again.", false);
     } finally {
       setBusy(null);
     }
+  }
+
+  function issueFor(provider: string): IntegrationIssue | null {
+    if (localIssue?.provider === provider) {
+      return localIssue;
+    }
+    if (connectionIssue?.provider === provider) {
+      return connectionIssue;
+    }
+    return null;
   }
 
   const realChannels = channels.filter((channel) => channel.provider !== "demo");
@@ -229,9 +256,9 @@ export function IntegrationsPanel({
         VIGIE can monitor the conversations your business already uses and surface the commitments, requests and risks
         that need your attention.
       </p>
-      {connectionNotice ? (
-        <p className="mt-4 text-sm text-[var(--high)]" role="alert">
-          {connectionNotice}
+      {connectionIssue ? (
+        <p className="mt-4 text-sm text-[var(--muted)]" role="status">
+          {connectionFailureHeadline(connectionIssue.provider)}
         </p>
       ) : null}
 
@@ -265,7 +292,7 @@ export function IntegrationsPanel({
         </section>
 
         {realChannels.map((channel) => {
-          const view = integrationView(channel, busy);
+          const view = integrationView(channel, busy, issueFor(channel.provider));
           return (
             <section key={channel.provider} className="border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -328,12 +355,6 @@ export function IntegrationsPanel({
           );
         })}
       </div>
-      {channelNotice ? (
-        <p className="mt-4 text-sm text-[var(--high)]" role="alert">
-          {channelNotice}
-        </p>
-      ) : null}
-
       {connected ? (
         <form onSubmit={(event) => void submit(event)} className="mt-8 border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
           <h2 className="text-lg font-semibold">Send a test WhatsApp message</h2>
