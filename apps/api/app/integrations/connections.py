@@ -1,3 +1,4 @@
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -11,6 +12,8 @@ from app.core.config import Settings, get_settings
 from app.domain.enums import ConnectionStatus, IntegrationProvider
 from app.domain.errors import ConflictError, NotFoundError, ProviderError
 from app.models import Business, ChannelConnection, IntegrationCredential, OAuthState
+
+logger = logging.getLogger(__name__)
 
 CATALOG = (
     {
@@ -215,6 +218,25 @@ def begin_oauth(
     return token
 
 
+def _oauth_state_stage(
+    session: Session,
+    row: OAuthState | None,
+    now: datetime,
+    expected_user_id: uuid.UUID | None,
+) -> str | None:
+    if row is None:
+        return "missing"
+    if row.used_at is not None:
+        return "already_used"
+    if row.expires_at <= now:
+        return "expired"
+    if row.user_id is None or (expected_user_id is not None and expected_user_id != row.user_id):
+        return "user_mismatch"
+    if role_for(session, row.user_id, row.business_id) is None:
+        return "business_mismatch"
+    return None
+
+
 def consume_oauth_state(
     session: Session,
     state: str,
@@ -223,14 +245,19 @@ def consume_oauth_state(
 ) -> tuple[uuid.UUID, uuid.UUID]:
     row = session.scalar(select(OAuthState).where(OAuthState.state == state, OAuthState.provider == provider.value))
     now = datetime.now(timezone.utc)
-    if row is None or row.used_at is not None or row.expires_at <= now or row.user_id is None:
-        raise ProviderError("Invalid or expired connection attempt.")
-    if expected_user_id is not None and expected_user_id != row.user_id:
-        raise ProviderError("Invalid or expired connection attempt.")
-    if role_for(session, row.user_id, row.business_id) is None:
-        raise ProviderError("Invalid or expired connection attempt.")
+    stage = _oauth_state_stage(session, row, now, expected_user_id)
+    if stage is not None:
+        logger.warning("OAuth state rejected provider=%s stage=%s", provider.value, stage)
+        raise ProviderError("Invalid or expired connection attempt.", reason="verify")
+    assert row is not None
     row.used_at = now
     session.commit()
+    logger.info(
+        "OAuth state accepted provider=%s business=%s user=%s",
+        provider.value,
+        row.business_id,
+        row.user_id,
+    )
     return row.business_id, row.user_id
 
 

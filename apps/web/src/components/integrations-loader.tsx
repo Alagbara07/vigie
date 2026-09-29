@@ -25,13 +25,13 @@ import {
 import { loadDemoMode } from "@/lib/api/system";
 import { connectionFailureDetail, type IntegrationIssue } from "@/lib/ux";
 
-function oauthIssue(result: string | null, provider: string | null): IntegrationIssue | null {
-  if (result !== "error") {
+function oauthIssue(result: string | null, provider: string | null, reason: string | null): IntegrationIssue | null {
+  if (result !== "error" || !provider) {
     return null;
   }
   return {
-    provider: provider ?? "",
-    detail: connectionFailureDetail(provider ?? ""),
+    provider,
+    detail: connectionFailureDetail(provider, reason),
     connection: true,
   };
 }
@@ -40,6 +40,7 @@ export function IntegrationsLoader() {
   const searchParams = useSearchParams();
   const connectionResult = searchParams.get("connection");
   const connectionProvider = searchParams.get("provider");
+  const connectionReason = searchParams.get("reason");
   const [phase, setPhase] = useState<"loading" | "error" | "ready">("loading");
   const [demoEnabled, setDemoEnabled] = useState(false);
   const [businessId, setBusinessId] = useState<string | null>(null);
@@ -90,7 +91,7 @@ export function IntegrationsLoader() {
       window.clearTimeout(timer);
       window.removeEventListener("pageshow", refreshIfRestored);
     };
-  }, [load, connectionResult, connectionProvider]);
+  }, [load, connectionResult, connectionProvider, connectionReason]);
 
   return (
     <AppShell>
@@ -139,7 +140,7 @@ export function IntegrationsLoader() {
               setChannels(await loadChannels(businessId));
             }
           }}
-          connectionIssue={oauthIssue(connectionResult, connectionProvider)}
+          connectionIssue={oauthIssue(connectionResult, connectionProvider, connectionReason)}
           onSend={async ({ customerName, text }) => {
             const slug = customerName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "customer";
             return sendDemoMessage({

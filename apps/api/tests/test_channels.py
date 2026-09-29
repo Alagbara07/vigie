@@ -286,6 +286,11 @@ def test_microsoft_oauth_normalizes_and_rejects_a_bad_state(
             follow_redirects=False,
         )
         state = started.headers["location"].split("state=")[1].split("&")[0]
+        missing = api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code"},
+            follow_redirects=False,
+        )
         bad = api_client.get(
             "/api/integrations/microsoft/callback",
             params={"code": "x", "state": "nope", "business_id": str(business.id)},
@@ -308,7 +313,10 @@ def test_microsoft_oauth_normalizes_and_rejects_a_bad_state(
     assert "Mail.Read" in started.headers["location"]
     assert "Mail.Send" not in started.headers["location"]
     assert "ms-secret" not in started.headers["location"]
+    assert "connection=error" in missing.headers["location"]
+    assert "reason=verify" in missing.headers["location"]
     assert "connection=error" in bad.headers["location"]
+    assert "reason=verify" in bad.headers["location"]
     assert callback.headers["location"].endswith("/settings/integrations?connection=microsoft365")
     assert "ms-access-token" not in callback.headers["location"]
     assert synced.json()["stored"] == 1
@@ -364,6 +372,7 @@ def test_microsoft_state_expires_and_cannot_be_reused(api_client: TestClient, db
             follow_redirects=False,
         )
         db_session.refresh(row)
+        assert row.used_at is None
         row.expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
         db_session.commit()
         callback = api_client.get(
@@ -386,9 +395,13 @@ def test_microsoft_state_expires_and_cannot_be_reused(api_client: TestClient, db
     assert "Mail.Send" not in started.headers["location"]
     assert "User.ReadWrite" not in started.headers["location"]
     assert "connection=error" in expired.headers["location"]
+    assert "reason=verify" in expired.headers["location"]
+    db_session.refresh(row)
     assert row.used_at is not None
     assert callback.headers["location"].endswith("/settings/integrations?connection=microsoft365")
+    assert "reason=" not in callback.headers["location"]
     assert "connection=error" in reused.headers["location"]
+    assert "reason=verify" in reused.headers["location"]
 
 
 def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
@@ -402,8 +415,8 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
     business = _business(db_session, "ms-profile-fail")
     monkeypatch.setattr("app.integrations.microsoft.post_form", _microsoft_token)
 
-    def denied(url: str, access_token: str) -> dict:
-        del url, access_token
+    def denied(url: str, access_token: str, **kwargs: object) -> dict:
+        del url, access_token, kwargs
         raise ProviderError("The provider could not complete the connection.")
 
     monkeypatch.setattr("app.integrations.microsoft.get_json", denied)
@@ -429,17 +442,24 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
         listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
     assert "connection=error" in failed.headers["location"]
     assert "provider=microsoft365" in failed.headers["location"]
+    assert "reason=finish" in failed.headers["location"]
     microsoft = next(item for item in listed.json() if item["provider"] == "microsoft365")
     assert microsoft["availability"] == "available"
     assert microsoft["account_label"] is None
     assert db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id)) is None
+    assert "Microsoft OAuth initiated" in caplog.text
+    assert "redirect=https://vigie-api.example/api/integrations/microsoft/callback" in caplog.text
+    assert "Microsoft OAuth callback reached" in caplog.text
+    assert "code_present=True" in caplog.text
+    assert "state_present=True" in caplog.text
     assert "Microsoft Graph profile lookup failed" in caplog.text
+    assert "ms-access-token" not in caplog.text
     assert "ms-access-token" not in caplog.text
     assert "ms-secret" not in caplog.text
     assert "auth-code" not in caplog.text
 
-    def rejected(url: str, data: dict[str, str]) -> dict:
-        del url, data
+    def rejected(url: str, data: dict[str, str], **kwargs: object) -> dict:
+        del url, data, kwargs
         raise ProviderError("The provider could not complete the connection.")
 
     monkeypatch.setattr("app.integrations.microsoft.post_form", rejected)
@@ -463,6 +483,7 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
         )
     assert "connection=error" in failed.headers["location"]
     assert "provider=microsoft365" in failed.headers["location"]
+    assert "reason=finish" in failed.headers["location"]
     assert "Microsoft OAuth token exchange failed" in caplog.text
     assert "auth-code" not in caplog.text
     assert "ms-secret" not in caplog.text
@@ -515,8 +536,8 @@ def test_microsoft_reconnect_failure_keeps_the_previous_mailbox(
         row.last_error = "Microsoft 365 needs to be reconnected."
         db_session.commit()
 
-        def denied(url: str, access_token: str) -> dict:
-            del url, access_token
+        def denied(url: str, access_token: str, **kwargs: object) -> dict:
+            del url, access_token, kwargs
             raise ProviderError("The provider could not complete the connection.")
 
         monkeypatch.setattr("app.integrations.microsoft.get_json", denied)
@@ -578,6 +599,7 @@ def test_microsoft_provider_denial_does_not_store_a_mailbox(
     assert "connection=error" in failed.headers["location"]
     assert "provider=microsoft365" in failed.headers["location"]
     assert "ada@example.com" not in failed.headers["location"]
+    assert "reason=permissions" in failed.headers["location"]
     assert "ada@example.com" not in caplog.text
     assert "category=provider code=access_denied" in caplog.text
     microsoft = next(item for item in listed.json() if item["provider"] == "microsoft365")
@@ -647,7 +669,8 @@ def test_microsoft_reconnect_updates_the_existing_connection(
         )
     )
 
-    def graph(url: str, access_token: str) -> dict:
+    def graph(url: str, access_token: str, **kwargs: object) -> dict:
+        del kwargs
         assert access_token == "ms-access-token"
         if url.startswith("https://graph.microsoft.com/v1.0/me?"):
             return next(profiles)
@@ -709,7 +732,8 @@ def test_microsoft_sync_isolates_the_business_and_refreshes_tokens(
     other = _business(db_session, "ms-other")
     issued = {"token": "ms-access-token"}
 
-    def tokens(url: str, data: dict[str, str]) -> dict:
+    def tokens(url: str, data: dict[str, str], **kwargs: object) -> dict:
+        del url, kwargs
         assert "ms-secret" == data["client_secret"]
         assert "User.Read" in data.get("scope", "")
         assert "Mail.Read" in data.get("scope", "")
@@ -721,7 +745,8 @@ def test_microsoft_sync_isolates_the_business_and_refreshes_tokens(
             return {"access_token": "ms-refreshed-token", "refresh_token": "ms-refresh-token", "expires_in": 3600}
         return {"access_token": "ms-access-token", "refresh_token": "ms-refresh-token", "expires_in": 3600}
 
-    def graph(url: str, access_token: str) -> dict:
+    def graph(url: str, access_token: str, **kwargs: object) -> dict:
+        del kwargs
         assert access_token == issued["token"]
         if url.startswith("https://graph.microsoft.com/v1.0/me?"):
             return {"id": "ms-user-9", "displayName": "Amaka Bello", "mail": "amaka@example.com"}
@@ -1178,7 +1203,8 @@ def _gmail_get(url: str, access_token: str) -> dict:
     }
 
 
-def _microsoft_token(url: str, data: dict[str, str]) -> dict:
+def _microsoft_token(url: str, data: dict[str, str], **kwargs: object) -> dict:
+    del kwargs
     assert "ms-secret" == data["client_secret"]
     assert "common" in url
     assert url == "https://login.microsoftonline.com/common/oauth2/v2.0/token"
@@ -1201,7 +1227,8 @@ def _microsoft_token(url: str, data: dict[str, str]) -> dict:
     }
 
 
-def _microsoft_get(url: str, access_token: str) -> dict:
+def _microsoft_get(url: str, access_token: str, **kwargs: object) -> dict:
+    del kwargs
     assert access_token == "ms-access-token"
     if url.startswith("https://graph.microsoft.com/v1.0/me?"):
         return {"id": "ms-user-1", "displayName": "Amaka Bello", "mail": "amaka@example.com"}

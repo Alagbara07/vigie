@@ -11,7 +11,6 @@ import {
 } from "@/lib/api/integrations";
 import {
   connectionFailureDetail,
-  connectionFailureHeadline,
   integrationView,
   knownApiDetail,
   type IntegrationIssue,
@@ -256,12 +255,6 @@ export function IntegrationsPanel({
         VIGIE can monitor the conversations your business already uses and surface the commitments, requests and risks
         that need your attention.
       </p>
-      {connectionIssue ? (
-        <p className="mt-4 text-sm text-[var(--muted)]" role="status">
-          {connectionFailureHeadline(connectionIssue.provider)}
-        </p>
-      ) : null}
-
       <div className="mt-8 grid gap-4">
         <section className="border border-[var(--line)] bg-[var(--panel)] px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-3">

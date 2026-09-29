@@ -9,28 +9,31 @@ logger = logging.getLogger(__name__)
 _UNAVAILABLE = "The provider could not complete the connection."
 
 
-def post_form(url: str, data: dict[str, str]) -> dict:
+def post_form(url: str, data: dict[str, str], *, purpose: str = "provider") -> dict:
     try:
         with httpx.Client(timeout=20) as client:
             response = client.post(url, data=data)
-    except httpx.HTTPError as exc:
-        raise ProviderError(_UNAVAILABLE) from exc
-    return _object(response)
+    except httpx.HTTPError:
+        logger.warning("Provider request failed purpose=%s status=none code=transport", purpose)
+        raise ProviderError(_UNAVAILABLE) from None
+    return _object(response, purpose)
 
 
-def get_json(url: str, access_token: str) -> dict:
+def get_json(url: str, access_token: str, *, purpose: str = "provider") -> dict:
     try:
         with httpx.Client(timeout=20) as client:
             response = client.get(url, headers={"Authorization": f"Bearer {access_token}"})
-    except httpx.HTTPError as exc:
-        raise ProviderError(_UNAVAILABLE) from exc
-    return _object(response)
+    except httpx.HTTPError:
+        logger.warning("Provider request failed purpose=%s status=none code=transport", purpose)
+        raise ProviderError(_UNAVAILABLE) from None
+    return _object(response, purpose)
 
 
-def _object(response: httpx.Response) -> dict:
+def _object(response: httpx.Response, purpose: str) -> dict:
     if response.status_code >= 400:
         logger.warning(
-            "Provider request failed status=%s code=%s",
+            "Provider request failed purpose=%s status=%s code=%s",
+            purpose,
             response.status_code,
             _error_code(response),
         )

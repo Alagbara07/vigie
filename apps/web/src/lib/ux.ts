@@ -127,18 +127,38 @@ export function integrationPhase(channel: ChannelStatus, busy: IntegrationBusy):
   return "ready";
 }
 
-export function connectionFailureHeadline(provider: string): string {
-  if (provider === "gmail") return "Google Workspace couldn't be connected.";
-  if (provider === "microsoft365") return "Microsoft 365 couldn't be connected.";
-  if (provider === "whatsapp") return "WhatsApp couldn't be connected.";
-  return "The connection could not be completed.";
-}
+const CONNECTION_FAILURES: Record<string, Record<string, string>> = {
+  cancelled: {
+    gmail: "Google sign-in was cancelled.",
+    microsoft365: "Microsoft sign-in was cancelled.",
+    whatsapp: "WhatsApp connection was cancelled.",
+  },
+  incomplete: {
+    gmail: "Google sign-in could not be completed.",
+    microsoft365: "Microsoft sign-in could not be completed.",
+    whatsapp: "WhatsApp connection could not be completed.",
+  },
+  permissions: {
+    gmail: "Google permissions were not granted.",
+    microsoft365: "Microsoft permissions were not granted.",
+    whatsapp: "WhatsApp permissions were not granted.",
+  },
+  verify: {
+    gmail: "Google could not verify the connection.",
+    microsoft365: "Microsoft could not verify the connection.",
+    whatsapp: "WhatsApp could not verify the connection.",
+  },
+  finish: {
+    gmail: "VIGIE could not finish connecting this mailbox. Try again.",
+    microsoft365: "VIGIE could not finish connecting this mailbox. Try again.",
+    whatsapp: "We couldn't connect WhatsApp. Check your configuration and try again.",
+  },
+};
 
-export function connectionFailureDetail(provider: string): string {
-  if (provider === "gmail") return "We couldn't connect your Google account. Please try again.";
-  if (provider === "microsoft365") return "We couldn't connect your Microsoft 365 account. Please try again.";
-  if (provider === "whatsapp") return "We couldn't connect WhatsApp. Check your configuration and try again.";
-  return "We couldn't complete this connection. Please try again.";
+export function connectionFailureDetail(provider: string, reason?: string | null): string {
+  const stage = reason && CONNECTION_FAILURES[reason] ? reason : "finish";
+  const messages = CONNECTION_FAILURES[stage];
+  return messages[provider] ?? "VIGIE could not finish connecting this integration. Try again.";
 }
 
 export function integrationView(
@@ -147,9 +167,7 @@ export function integrationView(
   issue: IntegrationIssue | null = null,
 ): IntegrationView {
   const stored = integrationPhase(channel, busy);
-  const ownsIssue = issue?.provider === channel.provider;
-  const connectionIssue = Boolean(ownsIssue && issue?.connection);
-  const phase = connectionIssue && (stored === "ready" || stored === "not_configured") ? "needs_attention" : stored;
+  const phase = stored;
   const name = providerName(channel.provider);
   const active = busy?.provider === channel.provider ? busy.action : null;
   const showResource = stored === "connected" || stored === "needs_attention" || stored === "syncing" || stored === "disconnecting";
@@ -157,7 +175,7 @@ export function integrationView(
     phase,
     badge: phaseBadge(phase),
     tone: phase === "needs_attention" ? "attention" : phase === "not_configured" ? "muted" : "neutral",
-    summary: connectionIssue ? issue!.detail : phaseSummary(channel, stored, active),
+    summary: phaseSummary(channel, stored, active),
     resource: showResource ? resourceLabel(channel) : null,
     activity: activityLine(channel, stored),
     listening: listeningLine(channel, stored),
@@ -177,7 +195,7 @@ export function integrationView(
 }
 
 function noticeFor(channel: ChannelStatus, stored: IntegrationPhase, issue: IntegrationIssue | null): string | null {
-  if (issue?.provider === channel.provider && !issue.connection) {
+  if (issue?.provider === channel.provider) {
     return issue.detail;
   }
   if (stored === "connected") {
@@ -244,13 +262,13 @@ function phaseSummary(
   }
   if (phase === "needs_attention") {
     if (channel.provider === "gmail") {
-      return "Your Google account needs to be reconnected before VIGIE can continue importing email.";
+      return "Your Google connection needs attention. Reconnect to continue importing mail.";
     }
     if (channel.provider === "microsoft365") {
-      return "Your Microsoft account needs to be reconnected before VIGIE can continue importing email.";
+      return "Your Microsoft connection needs attention. Reconnect to continue importing mail.";
     }
     if (channel.provider === "whatsapp") {
-      return "Your WhatsApp number needs to be reconnected before VIGIE can continue receiving messages.";
+      return "Your WhatsApp connection needs attention. Reconnect to continue receiving messages.";
     }
     return "This integration needs to be reconnected before VIGIE can continue.";
   }

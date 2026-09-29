@@ -179,7 +179,8 @@ def get_microsoft_connect(
 ) -> RedirectResponse:
     if business_id != principal.business_id:
         raise HTTPException(status_code=403, detail="You do not have access to this business.")
-    if not get_settings().microsoft_configured():
+    settings = get_settings()
+    if not settings.microsoft_configured():
         raise HTTPException(status_code=409, detail="Configuration required.")
     try:
         state = begin_oauth(session, principal.business_id, IntegrationProvider.MICROSOFT365, principal.user.id)
@@ -187,6 +188,16 @@ def get_microsoft_connect(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ProviderError as exc:
         raise _provider_error(exc) from exc
+    redirect_uri = settings.resolved_microsoft_redirect_uri()
+    logger.info(
+        "Microsoft OAuth initiated business=%s user=%s redirect=%s tenant=%s path_ok=%s trailing_slash=%s",
+        principal.business_id,
+        principal.user.id,
+        redirect_uri,
+        settings.microsoft_tenant_id.strip() or "common",
+        redirect_uri.endswith("/api/integrations/microsoft/callback"),
+        redirect_uri.endswith("/"),
+    )
     return RedirectResponse(MicrosoftAdapter().authorization_url(state), status_code=302)
 
 
@@ -197,11 +208,21 @@ def get_microsoft_callback(
     state: str = "",
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
+    logger.info(
+        "Microsoft OAuth callback reached code_present=%s state_present=%s provider_error=%s",
+        bool(code.strip()),
+        bool(state.strip()),
+        bool(_safe_oauth_error(request.query_params.get("error"))),
+    )
     provider_error = _safe_oauth_error(request.query_params.get("error"))
     if provider_error:
-        logger.warning("Microsoft OAuth callback rejected category=provider code=%s", provider_error)
-        target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
-        return RedirectResponse(f"{target}?connection=error&provider=microsoft365", status_code=302)
+        reason = _microsoft_provider_reason(provider_error, request.query_params.get("error_subcode"))
+        logger.warning(
+            "Microsoft OAuth callback rejected category=provider code=%s reason=%s",
+            provider_error,
+            reason,
+        )
+        return _oauth_error_redirect("microsoft365", reason)
     return _finish_oauth(
         session,
         lambda: complete_microsoft_oauth(session, code, state, _viewer_id(request, session)),
@@ -254,14 +275,41 @@ def _one(session: Session, business_id: uuid.UUID, provider: IntegrationProvider
 
 
 def _finish_oauth(session: Session, complete, provider: str) -> RedirectResponse:
-    target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
     try:
         complete()
-    except (ProviderError, NotFoundError, ConflictError):
-        logger.warning("OAuth callback failed provider=%s result=error", provider)
-        return RedirectResponse(f"{target}?connection=error&provider={provider}", status_code=302)
+    except (ProviderError, NotFoundError, ConflictError) as exc:
+        reason = exc.reason if isinstance(exc, ProviderError) else None
+        logger.warning("OAuth callback failed provider=%s result=error reason=%s", provider, reason or "unspecified")
+        return _oauth_error_redirect(provider, reason if provider == "microsoft365" else None)
     logger.info("OAuth callback completed provider=%s result=connected", provider)
-    return RedirectResponse(f"{target}?connection={provider}", status_code=302)
+    return _oauth_redirect(provider, f"connection={provider}")
+
+
+_OAUTH_REASONS = {"cancelled", "incomplete", "permissions", "verify", "finish"}
+
+
+def _oauth_error_redirect(provider: str, reason: str | None) -> RedirectResponse:
+    query = f"connection=error&provider={provider}"
+    if reason in _OAUTH_REASONS:
+        query = f"{query}&reason={reason}"
+    logger.info("OAuth redirect provider=%s destination=/settings/integrations?%s", provider, query)
+    target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
+    return RedirectResponse(f"{target}?{query}", status_code=302)
+
+
+def _oauth_redirect(provider: str, query: str) -> RedirectResponse:
+    logger.info("OAuth redirect provider=%s destination=/settings/integrations?%s", provider, query)
+    target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
+    return RedirectResponse(f"{target}?{query}", status_code=302)
+
+
+def _microsoft_provider_reason(code: str, subcode: object) -> str:
+    sub = subcode.strip().lower() if isinstance(subcode, str) else ""
+    if code == "access_denied" and sub == "cancel":
+        return "cancelled"
+    if code in {"access_denied", "consent_required", "interaction_required"}:
+        return "permissions"
+    return "incomplete"
 
 
 def _sync(operation):

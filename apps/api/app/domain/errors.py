@@ -20,3 +20,7 @@ class AIProviderError(DomainError):
 
 class ProviderError(DomainError):
     """A communication provider could not complete a connection or delivery."""
+
+    def __init__(self, message: str = "", *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason

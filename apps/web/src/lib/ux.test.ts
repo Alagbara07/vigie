@@ -200,15 +200,15 @@ describe("integration state", () => {
       issue,
     );
 
-    expect(failed.phase).toBe("needs_attention");
-    expect(failed.badge).toBe("Needs attention");
-    expect(failed.summary).toBe(detail);
+    expect(failed.phase).toBe("ready");
+    expect(failed.badge).toBe("Ready to connect");
+    expect(failed.notice).toBe(detail);
+    expect(failed.summary).not.toBe(detail);
     expect(failed.primary).toEqual({ label: `Connect ${name}`, kind: "connect" });
     expect(failed.resource).toBeNull();
     expect(failed.sync).toBe(false);
     expect(failed.disconnect).toBe(false);
-    expect(failed.notice).toBeNull();
-    expect(other.summary).not.toBe(detail);
+    expect(other.notice).toBeNull();
     expect(other.phase).toBe("ready");
   });
 
@@ -226,11 +226,26 @@ describe("integration state", () => {
     );
 
     expect(view.phase).toBe("needs_attention");
-    expect(view.summary).toBe(detail);
+    expect(view.notice).toBe(detail);
+    expect(view.summary).not.toBe(detail);
     expect(view.primary).toEqual({ label: `Reconnect ${name}`, kind: "reconnect" });
     expect(view.resource?.value).toBe(provider === "whatsapp" ? "+2348000000000" : "ada@example.com");
     expect(view.sync).toBe(false);
     expect(view.disconnect).toBe(true);
+  });
+
+  it("maps a Microsoft permission failure without leaving the card", () => {
+    const detail = connectionFailureDetail("microsoft365", "permissions");
+    const view = integrationView(
+      channel({ provider: "microsoft365", availability: "available", configured: true }),
+      null,
+      { provider: "microsoft365", detail, connection: true },
+    );
+
+    expect(detail).toBe("Microsoft permissions were not granted.");
+    expect(view.badge).toBe("Ready to connect");
+    expect(view.notice).toBe(detail);
+    expect(view.primary).toEqual({ label: "Connect Microsoft", kind: "connect" });
   });
 
   it("does not treat a sync problem as a lost connection", () => {

@@ -10,11 +10,12 @@ const loadDemoMode = vi.fn();
 const loadProviderStatus = vi.fn();
 let connection = "microsoft365";
 let provider = "";
+let reason = "";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () =>
     new URLSearchParams(
-      [connection ? `connection=${connection}` : "", provider ? `provider=${provider}` : ""].filter(Boolean).join("&"),
+      [connection ? `connection=${connection}` : "", provider ? `provider=${provider}` : "", reason ? `reason=${reason}` : ""].filter(Boolean).join("&"),
     ),
   usePathname: () => "/settings/integrations",
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
@@ -79,6 +80,7 @@ describe("IntegrationsLoader", () => {
   beforeEach(() => {
     connection = "microsoft365";
     provider = "";
+    reason = "";
     loadChannels.mockReset();
     loadSession.mockReset();
     loadDemoMode.mockReset();
@@ -141,17 +143,20 @@ describe("IntegrationsLoader", () => {
   it("explains a failed Microsoft connection without showing the mailbox as connected", async () => {
     connection = "error";
     provider = "microsoft365";
+    reason = "permissions";
     loadChannels.mockResolvedValue([microsoft(null, "available")]);
 
     render(<IntegrationsLoader />);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Microsoft 365 couldn't be connected.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Microsoft permissions were not granted.");
     const card = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
-    expect(card).toHaveTextContent("Needs attention");
-    expect(card).toHaveTextContent("We couldn't connect your Microsoft 365 account. Please try again.");
+    expect(card).toHaveTextContent("Ready to connect");
+    expect(card).toHaveTextContent("Microsoft permissions were not granted.");
+    expect(screen.queryByText("The connection could not be completed. Try connecting again.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect Microsoft" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reconnect Microsoft" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Ready to connect")).not.toBeInTheDocument();
+    expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
     expect(loadChannels).toHaveBeenCalledWith("biz-1");
@@ -164,10 +169,12 @@ describe("IntegrationsLoader", () => {
 
     render(<IntegrationsLoader />);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Microsoft 365 couldn't be connected.");
-    const card = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
+    const card = await screen.findByRole("heading", { name: "Microsoft 365" }).then((heading) => heading.closest("section"));
     expect(card).toHaveTextContent("Needs attention");
-    expect(card).toHaveTextContent("We couldn't connect your Microsoft 365 account. Please try again.");
+    expect(card).toHaveTextContent("Your Microsoft connection needs attention. Reconnect to continue importing mail.");
+    expect(card).toHaveTextContent("VIGIE could not finish connecting this mailbox. Try again.");
+    expect(screen.queryByText("The connection could not be completed. Try connecting again.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reconnect Microsoft" })).toBeInTheDocument();
     expect(screen.queryByText("Ready to connect")).not.toBeInTheDocument();
@@ -204,12 +211,12 @@ describe("IntegrationsLoader", () => {
 
     render(<IntegrationsLoader />);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Google Workspace couldn't be connected.");
-    const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
+    const google = await screen.findByRole("heading", { name: "Google Workspace" }).then((heading) => heading.closest("section"));
     const outlook = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
     const whatsapp = screen.getByRole("heading", { name: "WhatsApp Business" }).closest("section");
-    expect(google).toHaveTextContent("Needs attention");
-    expect(google).toHaveTextContent("We couldn't connect your Google account. Please try again.");
+    expect(google).toHaveTextContent("Ready to connect");
+    expect(google).toHaveTextContent("VIGIE could not finish connecting this mailbox. Try again.");
+    expect(screen.queryByText("The connection could not be completed. Try connecting again.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect Google" })).toBeInTheDocument();
     expect(outlook).toHaveTextContent("Ready to connect");
     expect(outlook).not.toHaveTextContent("We couldn't connect your Google account");

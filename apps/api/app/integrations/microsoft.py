@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth.crypto import open_secret
 from app.core.config import Settings, get_settings
 from app.domain.enums import IntegrationProvider, MessageSource, SenderType
-from app.domain.errors import AIProviderError, InvalidProposalError, ProviderError
+from app.domain.errors import AIProviderError, ConflictError, InvalidProposalError, NotFoundError, ProviderError
 from app.integrations.connections import (
     consume_oauth_state,
     mark_sync,
@@ -118,10 +118,13 @@ def complete_microsoft_oauth(
     )
     if not settings.microsoft_configured():
         logger.warning("Microsoft OAuth callback rejected category=not_configured")
-        raise ProviderError("Configuration required.")
-    if not code.strip() or not state.strip():
+        raise ProviderError("Configuration required.", reason="finish")
+    if not state.strip():
+        logger.warning("Microsoft OAuth callback rejected category=state stage=missing")
+        raise ProviderError("Invalid or expired connection attempt.", reason="verify")
+    if not code.strip():
         logger.warning("Microsoft OAuth callback rejected category=missing_code")
-        raise ProviderError(_PROVIDER_FAILURE)
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish")
     try:
         business_id, user_id = consume_oauth_state(
             session,
@@ -133,6 +136,11 @@ def complete_microsoft_oauth(
         logger.warning("Microsoft OAuth callback rejected category=state")
         raise
     logger.info("Microsoft OAuth state accepted business=%s user=%s", business_id, user_id)
+    logger.info(
+        "Microsoft OAuth token exchange started business=%s redirect=%s",
+        business_id,
+        settings.resolved_microsoft_redirect_uri(),
+    )
     try:
         tokens = post_form(
             f"{_authority(settings)}/token",
@@ -144,37 +152,64 @@ def complete_microsoft_oauth(
                 "grant_type": "authorization_code",
                 "scope": _SCOPE,
             },
+            purpose="microsoft_token",
         )
     except ProviderError:
         logger.warning("Microsoft OAuth token exchange failed business=%s category=token", business_id)
-        raise
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     access_token = tokens.get("access_token")
+    refresh = tokens.get("refresh_token")
     if not isinstance(access_token, str) or not access_token:
-        logger.warning("Microsoft OAuth token exchange failed business=%s category=token", business_id)
-        raise ProviderError(_PROVIDER_FAILURE)
+        logger.warning(
+            "Microsoft OAuth token exchange failed business=%s category=token access_present=false refresh_present=%s",
+            business_id,
+            isinstance(refresh, str) and bool(refresh),
+        )
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish")
     _log_granted_scopes(tokens, business_id)
+    logger.info("Microsoft Graph profile lookup started business=%s", business_id)
     try:
-        profile = get_json(_ME_URL, access_token)
+        profile = get_json(_ME_URL, access_token, purpose="microsoft_graph_profile")
     except ProviderError:
         logger.warning("Microsoft Graph profile lookup failed business=%s category=profile", business_id)
-        raise
-    email = str(profile.get("mail") or profile.get("userPrincipalName") or "").strip().lower()
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
+    mail_value = profile.get("mail")
+    upn_value = profile.get("userPrincipalName")
+    mail_present = isinstance(mail_value, str) and bool(mail_value.strip())
+    upn_present = isinstance(upn_value, str) and bool(upn_value.strip())
+    email = str(mail_value or upn_value or "").strip().lower()
     account_id = str(profile.get("id") or email).strip()
     if not email or not account_id:
-        logger.warning("Microsoft Graph profile lookup failed business=%s category=mailbox", business_id)
-        raise ProviderError(_PROVIDER_FAILURE)
-    logger.info("Microsoft Graph profile lookup succeeded business=%s mailbox=present", business_id)
-    snapshot = _connection_snapshot(session, business_id)
-    connection = save_connection(
-        session,
-        business_id=business_id,
-        provider=IntegrationProvider.MICROSOFT365,
-        external_account_id=account_id,
-        display_name=email,
-        metadata={"mail": email, "profile_name": str(profile.get("displayName") or email).strip(), "scope": _SCOPE},
-        connected_by_user_id=user_id,
+        logger.warning(
+            "Microsoft Graph profile lookup failed business=%s category=mailbox mail_present=%s upn_present=%s",
+            business_id,
+            mail_present,
+            upn_present,
+        )
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish")
+    logger.info(
+        "Microsoft Graph profile lookup succeeded business=%s mail_present=%s upn_present=%s mailbox=present",
+        business_id,
+        mail_present,
+        upn_present,
     )
-    refresh = tokens.get("refresh_token")
+    snapshot = _connection_snapshot(session, business_id)
+    try:
+        connection = save_connection(
+            session,
+            business_id=business_id,
+            provider=IntegrationProvider.MICROSOFT365,
+            external_account_id=account_id,
+            display_name=email,
+            metadata={"mail": email, "profile_name": str(profile.get("displayName") or email).strip(), "scope": _SCOPE},
+            connected_by_user_id=user_id,
+        )
+    except ConflictError:
+        logger.warning("Microsoft connection persistence failed business=%s category=conflict", business_id)
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
+    except NotFoundError:
+        logger.warning("Microsoft connection persistence failed business=%s category=missing_business", business_id)
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     try:
         store_credential(
             session,
@@ -187,8 +222,8 @@ def complete_microsoft_oauth(
         logger.warning("Microsoft connection persistence failed business=%s category=persist", business_id)
         _revert_microsoft_connection(session, connection.id, snapshot)
         if isinstance(exc, ProviderError):
-            raise
-        raise ProviderError(_PROVIDER_FAILURE) from exc
+            raise ProviderError(str(exc), reason="finish") from exc
+        raise ProviderError(_PROVIDER_FAILURE, reason="finish") from exc
     logger.info("Microsoft credential stored business=%s connection=%s", business_id, connection.id)
     record_audit(
         session,

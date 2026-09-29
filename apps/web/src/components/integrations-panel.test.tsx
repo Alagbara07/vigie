@@ -51,8 +51,9 @@ describe("integrations", () => {
     const googleCard = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
     const whatsappCard = screen.getByRole("heading", { name: "WhatsApp Business" }).closest("section");
 
-    expect(screen.getByRole("alert")).toHaveTextContent("We couldn't connect your Microsoft 365 account. Please try again.");
-    expect(microsoftCard).toHaveTextContent("Needs attention");
+    expect(screen.getByRole("alert")).toHaveTextContent("VIGIE could not finish connecting this mailbox. Try again.");
+    expect(microsoftCard).toHaveTextContent("Not configured");
+    expect(microsoftCard).not.toHaveTextContent("Needs attention");
     expect(microsoftCard).toHaveTextContent("Configure Microsoft");
     expect(googleCard).not.toHaveTextContent("We couldn't connect your Microsoft 365 account");
     expect(googleCard).toHaveTextContent("Not configured");
@@ -264,7 +265,7 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Needs attention")).toBeInTheDocument();
-    expect(screen.getByText("Your Google account needs to be reconnected before VIGIE can continue importing email.")).toBeInTheDocument();
+    expect(screen.getByText("Your Google connection needs attention. Reconnect to continue importing mail.")).toBeInTheDocument();
     expect(screen.getByText("Connected Gmail mailbox:")).toBeInTheDocument();
     expect(screen.getByText("name@example.com")).toBeInTheDocument();
     expect(screen.getByText("Last successful sync: 28 Sept 2026")).toBeInTheDocument();
@@ -421,7 +422,7 @@ describe("integrations", () => {
     );
 
     expect(screen.getByText("Needs attention")).toBeInTheDocument();
-    expect(screen.getByText("Your Microsoft account needs to be reconnected before VIGIE can continue importing email.")).toBeInTheDocument();
+    expect(screen.getByText("Your Microsoft connection needs attention. Reconnect to continue importing mail.")).toBeInTheDocument();
     expect(screen.getByText("Connected Outlook mailbox:")).toBeInTheDocument();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByText("Last successful sync: 28 Sept 2026")).toBeInTheDocument();
@@ -470,7 +471,7 @@ describe("integrations", () => {
 
     expect(screen.getByText("Needs attention")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Your WhatsApp number needs to be reconnected before VIGIE can continue receiving messages.",
+      "Your WhatsApp connection needs attention. Reconnect to continue receiving messages.",
     );
     expect(screen.queryByText("This channel is not set up yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
@@ -637,8 +638,9 @@ describe("integrations", () => {
 
     const outlook = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
     const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
-    expect(screen.getByRole("status")).toHaveTextContent("Microsoft 365 couldn't be connected.");
-    expect(outlook).toHaveTextContent("Needs attention");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("The connection could not be completed. Try connecting again.")).not.toBeInTheDocument();
+    expect(outlook).toHaveTextContent("Ready to connect");
     expect(outlook).toHaveTextContent("We couldn't connect your Microsoft 365 account. Please try again.");
     expect(outlook).toHaveTextContent("Connect Microsoft");
     expect(google).toHaveTextContent("Ready to connect");
@@ -662,8 +664,8 @@ describe("integrations", () => {
 
     const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
     const outlook = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
-    expect(screen.getByRole("status")).toHaveTextContent("Google Workspace couldn't be connected.");
-    expect(google).toHaveTextContent("Needs attention");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(google).toHaveTextContent("Ready to connect");
     expect(google).toHaveTextContent("We couldn't connect your Google account. Please try again.");
     expect(google).toHaveTextContent("Connect Google");
     expect(outlook).not.toHaveTextContent("We couldn't connect your Google account");
@@ -690,7 +692,7 @@ describe("integrations", () => {
     const whatsappCard = screen.getByRole("heading", { name: "WhatsApp Business" }).closest("section");
     const google = screen.getByRole("heading", { name: "Google Workspace" }).closest("section");
     const outlook = screen.getByRole("heading", { name: "Microsoft 365" }).closest("section");
-    expect(whatsappCard).toHaveTextContent("Needs attention");
+    expect(whatsappCard).toHaveTextContent("Ready to connect");
     expect(whatsappCard).toHaveTextContent("We couldn't connect WhatsApp. Check your configuration and try again.");
     expect(whatsappCard).toHaveTextContent("Connect WhatsApp");
     expect(whatsappCard).not.toHaveTextContent("HTTP 400");
