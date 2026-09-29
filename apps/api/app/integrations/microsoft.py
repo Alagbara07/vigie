@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.crypto import open_secret
@@ -60,6 +61,7 @@ class MicrosoftAdapter:
                 "response_mode": "query",
                 "scope": _SCOPE,
                 "state": state,
+                "prompt": "consent",
             }
         )
         return f"{_authority(active)}/authorize?{query}"
@@ -108,6 +110,12 @@ def complete_microsoft_oauth(
     expected_user_id: uuid.UUID | None = None,
 ) -> None:
     settings = get_settings()
+    _log_redirect(settings)
+    logger.info(
+        "Microsoft OAuth callback reached code_present=%s state_present=%s",
+        bool(code.strip()),
+        bool(state.strip()),
+    )
     if not settings.microsoft_configured():
         logger.warning("Microsoft OAuth callback rejected category=not_configured")
         raise ProviderError("Configuration required.")
@@ -144,7 +152,7 @@ def complete_microsoft_oauth(
     if not isinstance(access_token, str) or not access_token:
         logger.warning("Microsoft OAuth token exchange failed business=%s category=token", business_id)
         raise ProviderError(_PROVIDER_FAILURE)
-    logger.info("Microsoft OAuth token exchange succeeded business=%s", business_id)
+    _log_granted_scopes(tokens, business_id)
     try:
         profile = get_json(_ME_URL, access_token)
     except ProviderError:
@@ -156,6 +164,7 @@ def complete_microsoft_oauth(
         logger.warning("Microsoft Graph profile lookup failed business=%s category=mailbox", business_id)
         raise ProviderError(_PROVIDER_FAILURE)
     logger.info("Microsoft Graph profile lookup succeeded business=%s mailbox=present", business_id)
+    snapshot = _connection_snapshot(session, business_id)
     connection = save_connection(
         session,
         business_id=business_id,
@@ -166,13 +175,21 @@ def complete_microsoft_oauth(
         connected_by_user_id=user_id,
     )
     refresh = tokens.get("refresh_token")
-    store_credential(
-        session,
-        connection,
-        access_token=access_token,
-        refresh_token=refresh if isinstance(refresh, str) else None,
-        expires_at=_expiry(tokens.get("expires_in")),
-    )
+    try:
+        store_credential(
+            session,
+            connection,
+            access_token=access_token,
+            refresh_token=refresh if isinstance(refresh, str) else None,
+            expires_at=_expiry(tokens.get("expires_in")),
+        )
+    except Exception as exc:
+        logger.warning("Microsoft connection persistence failed business=%s category=persist", business_id)
+        _revert_microsoft_connection(session, connection.id, snapshot)
+        if isinstance(exc, ProviderError):
+            raise
+        raise ProviderError(_PROVIDER_FAILURE) from exc
+    logger.info("Microsoft credential stored business=%s connection=%s", business_id, connection.id)
     record_audit(
         session,
         user_id=user_id,
@@ -187,6 +204,85 @@ def complete_microsoft_oauth(
         business_id,
         connection.id,
     )
+
+
+def _log_redirect(settings: Settings) -> None:
+    uri = settings.resolved_microsoft_redirect_uri()
+    host = ""
+    path = ""
+    if "://" in uri:
+        rest = uri.split("://", 1)[1]
+        host = rest.split("/", 1)[0].split("@")[-1].split(":", 1)[0].lower()
+        path = "/" + rest.split("/", 1)[1] if "/" in rest else ""
+    logger.info(
+        "Microsoft OAuth redirect scheme_https=%s path_ok=%s trailing_slash=%s local=%s explicit=%s",
+        uri.startswith("https://"),
+        path == "/api/integrations/microsoft/callback",
+        uri.endswith("/"),
+        host in {"localhost", "127.0.0.1", "0.0.0.0"},
+        bool(settings.microsoft_redirect_uri.strip()),
+    )
+
+
+def _log_granted_scopes(tokens: dict, business_id: uuid.UUID) -> None:
+    raw = tokens.get("scope")
+    names: set[str] = set()
+    if isinstance(raw, str):
+        for part in raw.split():
+            name = part.rsplit("/", 1)[-1]
+            plain = name.isascii() and name.isidentifier()
+            scoped = name.isascii() and "." in name and " " not in name
+            if (plain or scoped) and 1 <= len(name) <= 80:
+                names.add(name)
+    refresh = tokens.get("refresh_token")
+    logger.info(
+        "Microsoft OAuth token exchange succeeded business=%s scopes=%s refresh_present=%s",
+        business_id,
+        ",".join(sorted(names)) if names else "absent",
+        isinstance(refresh, str) and bool(refresh),
+    )
+
+
+def _connection_snapshot(session: Session, business_id: uuid.UUID) -> dict | None:
+    row = session.scalar(
+        select(ChannelConnection).where(
+            ChannelConnection.business_id == business_id,
+            ChannelConnection.provider == IntegrationProvider.MICROSOFT365.value,
+        )
+    )
+    if row is None:
+        return None
+    return {
+        "status": row.status,
+        "external_account_id": row.external_account_id,
+        "display_name": row.display_name,
+        "connected_at": row.connected_at,
+        "connected_by_user_id": row.connected_by_user_id,
+        "last_error": row.last_error,
+        "connection_metadata": row.connection_metadata,
+    }
+
+
+def _revert_microsoft_connection(session: Session, connection_id: uuid.UUID, snapshot: dict | None) -> None:
+    session.rollback()
+    row = session.get(ChannelConnection, connection_id)
+    if row is None:
+        return
+    if snapshot is None:
+        secret = session.get(IntegrationCredential, row.id)
+        if secret is not None:
+            session.delete(secret)
+        session.delete(row)
+    else:
+        row.status = snapshot["status"]
+        row.external_account_id = snapshot["external_account_id"]
+        row.display_name = snapshot["display_name"]
+        row.connected_at = snapshot["connected_at"]
+        row.connected_by_user_id = snapshot["connected_by_user_id"]
+        row.last_error = snapshot["last_error"]
+        row.connection_metadata = snapshot["connection_metadata"]
+    session.commit()
+    logger.info("Microsoft connection persistence rolled back connection=%s", connection_id)
 
 
 def sync_microsoft(session: Session, business_id: uuid.UUID) -> dict[str, int]:

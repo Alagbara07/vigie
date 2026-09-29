@@ -197,6 +197,11 @@ def get_microsoft_callback(
     state: str = "",
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
+    provider_error = _safe_oauth_error(request.query_params.get("error"))
+    if provider_error:
+        logger.warning("Microsoft OAuth callback rejected category=provider code=%s", provider_error)
+        target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
+        return RedirectResponse(f"{target}?connection=error&provider=microsoft365", status_code=302)
     return _finish_oauth(
         session,
         lambda: complete_microsoft_oauth(session, code, state, _viewer_id(request, session)),
@@ -266,6 +271,17 @@ def _sync(operation):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ProviderError as exc:
         raise _provider_error(exc) from exc
+
+
+def _safe_oauth_error(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned = value.strip()
+    if not cleaned:
+        return ""
+    if cleaned.isascii() and " " not in cleaned and 1 <= len(cleaned) <= 80:
+        return cleaned
+    return "unknown"
 
 
 def _viewer_id(request: Request, session: Session) -> uuid.UUID | None:
