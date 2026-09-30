@@ -145,6 +145,14 @@ export function enableGmailListening(businessId: string): Promise<ChannelStatus>
   );
 }
 
+export function enableMicrosoftListening(businessId: string): Promise<ChannelStatus> {
+  return apiPost(
+    `/api/integrations/microsoft/watch?business_id=${encodeURIComponent(businessId)}`,
+    {},
+    parseChannel,
+  );
+}
+
 export function oauthConnectPath(provider: string, businessId: string): string {
   const route = provider === "microsoft365" ? "microsoft" : provider;
   return `/api/integrations/${route}/connect?business_id=${businessId}`;

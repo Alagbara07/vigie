@@ -43,6 +43,17 @@ _RECONNECT = "Gmail needs to be reconnected."
 _MAX_HISTORY_PAGES = 20
 
 
+def stop_gmail_watch(session: Session, connection: ChannelConnection) -> None:
+    if _metadata(connection).get("watch_enabled") is not True and not _metadata(connection).get("watch_expiration"):
+        return
+    try:
+        token = access_token_for(session, connection)
+        gmail_post("https://gmail.googleapis.com/gmail/v1/users/me/stop", token, {})
+        logger.info("Stopped Gmail watch business=%s", connection.business_id)
+    except ProviderError:
+        logger.info("Gmail watch stop skipped business=%s", connection.business_id)
+
+
 def prepare_gmail_realtime(session: Session, business_id: uuid.UUID) -> None:
     """Register a watch after OAuth when Pub/Sub is configured.
 

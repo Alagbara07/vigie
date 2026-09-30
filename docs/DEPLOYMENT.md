@@ -83,7 +83,35 @@ python -m app.jobs.renew_gmail_watches
 | Schedule | `0 6 * * *` (06:00 UTC every day) |
 | Command | `python -m app.jobs.renew_gmail_watches` |
 
-Render cron jobs do not inherit the web service environment. Set `DATABASE_URL`, `API_PUBLIC_URL`, `CREDENTIAL_ENCRYPTION_KEY`, the Google OAuth variables, and the `GMAIL_PUBSUB_*` variables on the cron service. `GMAIL_WATCH_RENEW_WITHIN_HOURS` defaults to `24`.
+Render cron jobs do not inherit the web service environment. Set `DATABASE_URL`, `API_PUBLIC_URL`, `CREDENTIAL_ENCRYPTION_KEY`, the Google OAuth variables, and the `GMAIL_PUBSUB_*` variables on the Gmail cron service. `GMAIL_WATCH_RENEW_WITHIN_HOURS` defaults to `24`.
+
+Microsoft Graph subscriptions expire in under three days. Renew them with:
+
+```bash
+python -m app.jobs.renew_microsoft_subscriptions
+```
+
+| Cron setting | Value |
+| --- | --- |
+| Name | `vigie-microsoft-subscription-renewal` |
+| Schedule | `30 6 * * *` (06:30 UTC every day) |
+| Command | `python -m app.jobs.renew_microsoft_subscriptions` |
+
+That cron needs `DATABASE_URL`, `API_PUBLIC_URL`, `CREDENTIAL_ENCRYPTION_KEY`, and the `MICROSOFT_*` variables. It does not inherit them from the web service.
+
+Signals are opened by the existing evaluators. Mail ingest runs them at the message time. A separate hourly job runs them at the current time so a commitment becomes overdue and an unanswered request crosses its threshold without waiting for another email:
+
+```bash
+python -m app.jobs.evaluate_signals
+```
+
+| Cron setting | Value |
+| --- | --- |
+| Name | `vigie-signal-evaluation` |
+| Schedule | `15 * * * *` (every hour at minute 15) |
+| Command | `python -m app.jobs.evaluate_signals` |
+
+That cron needs `DATABASE_URL` only, plus `APP_ENV=production` and `VIGIE_DEMO_MODE=false`.
 
 A watch shows **Listening** only after Google accepts `users.watch` and the stored expiration is still in the future.
 

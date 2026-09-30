@@ -470,7 +470,7 @@ function IntegrationActions({
         ) : null}
         {view.listen ? (
           <button type="button" onClick={onListen} className={buttonClass}>
-            Turn on automatic updates
+            {channel.realtime === "needs_attention" ? "Reconnect automatic updates" : "Turn on automatic updates"}
           </button>
         ) : null}
         {view.primary ? (

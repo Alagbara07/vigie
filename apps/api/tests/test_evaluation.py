@@ -32,6 +32,35 @@ NEXT_LOCAL_DAY = datetime(2026, 9, 26, 0, 0, tzinfo=LAGOS)
 AFTER_DUE = datetime(2026, 9, 26, 9, 0, tzinfo=LAGOS)
 
 
+def test_evaluation_job_opens_a_due_signal_and_continues_after_one_failure(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.jobs.evaluate_signals import evaluate_businesses
+    from app.schemas.evaluation import EvaluationRead
+
+    ready, _commitment = _payment_commitment(db_session, "job-ready")
+    broken, _other = _payment_commitment(db_session, "job-broken")
+    calls: list[uuid.UUID] = []
+
+    def fake(session: Session, business_id: uuid.UUID, reference_time: datetime, evaluators=None) -> EvaluationRead:
+        del evaluators
+        calls.append(business_id)
+        if business_id == broken.id:
+            raise RuntimeError("mailbox failed")
+        from app.services.evaluation import run_evaluation as real_evaluation
+
+        return real_evaluation(session, business_id, reference_time)
+
+    monkeypatch.setattr("app.jobs.evaluate_signals.run_evaluation", fake)
+    evaluated = evaluate_businesses(db_session, now=AFTER_DUE)
+    assert set(calls) == {ready.id, broken.id}
+    assert evaluated == 1
+    signal = db_session.scalar(select(Signal).where(Signal.business_id == ready.id))
+    assert signal is not None
+    assert signal.signal_type == "OVERDUE_PAYMENT"
+
+
 def test_date_commitment_stays_pending_through_the_due_day() -> None:
     assert is_past_due(DUE_START, DuePrecision.DATE.value, BEFORE_DUE, "Africa/Lagos") is False
     assert is_past_due(DUE_START, DuePrecision.DATE.value, DUE_START, "Africa/Lagos") is False
@@ -83,7 +112,7 @@ def test_overdue_payment_opens_one_signal_and_replay_keeps_it(db_session: Sessio
     second = run_evaluation(db_session, business.id, AFTER_DUE.replace(hour=18))
     signal = db_session.scalar(select(Signal))
 
-    assert first.evaluators_run == 2
+    assert first.evaluators_run == 3
     assert first.commitments_missed == 1
     assert first.signals_created == 1
     assert first.signals_existing == 0
@@ -125,8 +154,11 @@ def test_payment_claim_does_not_fulfill_the_commitment(db_session: Session) -> N
     assert analyzed.events[0].extracted_data["payment_verified"] is False
     assert result.commitments_missed == 1
     assert commitment.status == "MISSED"
-    assert _count(db_session, Signal) == 1
-    assert db_session.scalar(select(Signal.signal_type)) == "OVERDUE_PAYMENT"
+    kinds = set(db_session.scalars(select(Signal.signal_type)))
+    assert kinds == {"OVERDUE_PAYMENT", "PAYMENT_CLAIM"}
+    claim_signal = db_session.scalar(select(Signal).where(Signal.signal_type == "PAYMENT_CLAIM"))
+    assert claim_signal is not None
+    assert "not verified" in claim_signal.description
 
 
 def test_open_overdue_signal_is_unique_for_a_commitment(db_session: Session) -> None:
@@ -275,7 +307,7 @@ def test_seeded_adaeze_timeline(db_session: Session) -> None:
         select(Commitment).where(Commitment.business_id == business.id)
     )
     assert before.commitments_missed == 0
-    assert before.signals_created == 0
+    assert before.signals_created == 1
     assert promise is not None
     assert promise.status == "PENDING"
     assert promise.due_at is not None
@@ -301,8 +333,8 @@ def test_seeded_adaeze_timeline(db_session: Session) -> None:
     assert overdue[0].financial_impact_amount == Decimal("150000.00")
     assert len(requests) == 1
     assert replay.signals_created == 0
-    assert replay.signals_existing == 2
-    assert _count(db_session, Signal) == 2
+    assert replay.signals_existing == 3
+    assert _count(db_session, Signal) == 3
 
 
 def test_evaluation_and_signal_endpoints(api_client: TestClient) -> None:
@@ -358,7 +390,7 @@ def test_evaluation_and_signal_endpoints(api_client: TestClient) -> None:
     body = after.json()
     assert body["commitments_missed"] == 1
     assert body["signals_created"] == 1
-    assert body["evaluators_run"] == 2
+    assert body["evaluators_run"] == 3
     assert replay.json()["signals_created"] == 0
     assert replay.json()["signals_existing"] == 1
     assert listed.status_code == 200

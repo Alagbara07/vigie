@@ -27,6 +27,8 @@ def draft_for_signal(
         return _overdue_payment(customer_name, amount, currency)
     if signal_type == SignalType.UNANSWERED_REQUEST.value:
         return _unanswered_request(customer_name)
+    if signal_type == SignalType.PAYMENT_CLAIM.value:
+        return _payment_claim(customer_name, amount, currency)
     return None
 
 
@@ -73,6 +75,26 @@ def _unanswered_request(customer_name: str | None) -> ActionDraft:
             f"No customer message has been drafted for {who}. "
             "The request asks for information VIGIE does not have, so no price or availability is included. "
             "Review the question and reply yourself."
+        ),
+    )
+
+
+def _payment_claim(
+    customer_name: str | None,
+    amount: Decimal | None,
+    currency: str | None,
+) -> ActionDraft:
+    name = _given_name(customer_name)
+    who = name or "the customer"
+    money = _money(amount, currency) if amount is not None and currency else None
+    claimed = f" {money}" if money else ""
+    return ActionDraft(
+        action_type=ActionType.VERIFY_PAYMENT.value,
+        title="Check the claimed payment",
+        description="The customer says the money was sent. That claim is not a verified payment.",
+        proposed_content=(
+            f"Hi {who}, we saw your message that you sent{claimed}. "
+            "We are checking it against our records. This does not mark the payment as received."
         ),
     )
 

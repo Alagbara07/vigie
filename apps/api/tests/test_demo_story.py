@@ -103,12 +103,12 @@ def test_demo_story_reaches_an_approved_follow_up(db_session: Session) -> None:
     assert first.events_created == 3
     assert first.commitments_created == 1
     assert first.commitments_missed == 1
-    assert first.signals_created == 2
-    assert first.actions_created == 2
+    assert first.signals_created == 3
+    assert first.actions_created == 3
     assert first.evaluated_before == BEFORE_DUE
     assert first.evaluated_after == AFTER_DUE
     assert second.events_created == 3
-    assert second.actions_created == 2
+    assert second.actions_created == 3
     assert _count(db_session, BusinessEvent) == 3
     assert _count(db_session, Commitment) == 1
 
@@ -135,6 +135,8 @@ def test_demo_story_reaches_an_approved_follow_up(db_session: Session) -> None:
     assert signals["OVERDUE_PAYMENT"].status == "OPEN"
     assert signals["OVERDUE_PAYMENT"].severity == "HIGH"
     assert signals["UNANSWERED_REQUEST"].status == "OPEN"
+    assert signals["PAYMENT_CLAIM"].status == "OPEN"
+    assert "not verified" in signals["PAYMENT_CLAIM"].description
     assert greeting is not None
     greeting_customer = db_session.get(Conversation, greeting.conversation_id)
     assert greeting_customer is not None
@@ -172,13 +174,13 @@ def test_reprocessing_the_same_demo_does_not_duplicate_rows(db_session: Session)
     recommended = recommend_actions(db_session, business.id)
 
     assert again.signals_created == 0
-    assert again.signals_existing == 2
+    assert again.signals_existing == 3
     assert recommended.actions_created == 0
-    assert recommended.actions_existing == 2
+    assert recommended.actions_existing == 3
     assert _rows_for(db_session, BusinessEvent, BusinessEvent.business_id, business.id) == 3
     assert _rows_for(db_session, Commitment, Commitment.business_id, business.id) == 1
-    assert _rows_for(db_session, Signal, Signal.business_id, business.id) == 2
-    assert _rows_for(db_session, Action, Action.business_id, business.id) == 2
+    assert _rows_for(db_session, Signal, Signal.business_id, business.id) == 3
+    assert _rows_for(db_session, Action, Action.business_id, business.id) == 3
 
 
 def test_demo_run_endpoint_returns_the_measured_story(api_client: TestClient) -> None:
@@ -196,8 +198,8 @@ def test_demo_run_endpoint_returns_the_measured_story(api_client: TestClient) ->
     assert body["events_created"] == 3
     assert body["commitments_created"] == 1
     assert body["commitments_missed"] == 1
-    assert body["signals_created"] == 2
-    assert body["actions_created"] == 2
+    assert body["signals_created"] == 3
+    assert body["actions_created"] == 3
     assert body["evaluated_before"].startswith("2026-09-24T09:00:00")
     assert body["evaluated_after"].startswith("2026-09-26T09:00:00")
     assert "api_key" not in response.text.lower()

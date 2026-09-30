@@ -25,7 +25,7 @@ export function parseConversationPreview(value: unknown): ConversationPreview {
     conversation_id: requiredString(value, "conversation_id"),
     customer_id: typeof customerId === "string" ? customerId : null,
     customer_name: requiredString(value, "customer_name"),
-    last_message: requiredString(value, "last_message"),
+    last_message: typeof value.last_message === "string" ? value.last_message || "No message text" : requiredString(value, "last_message"),
     last_message_at: requiredString(value, "last_message_at"),
     sender_type: requiredString(value, "sender_type"),
     direction: requiredString(value, "direction"),

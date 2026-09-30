@@ -16,6 +16,8 @@ from app.integrations.gmail import GmailAdapter, complete_gmail_oauth, sync_gmai
 from app.integrations.gmail_push import receive_gmail_notification, register_gmail_watch
 from app.integrations.pubsub_auth import verify_pubsub_push
 from app.integrations.microsoft import MicrosoftAdapter, complete_microsoft_oauth, sync_microsoft
+from app.integrations.microsoft_push import receive_microsoft_notification, register_microsoft_subscription, validation_token
+from app.integrations.oauth_log import attempt_id, bind, new_request_id, prefix
 from app.integrations.whatsapp import WhatsAppAdapter, receive_whatsapp_events
 from app.schemas.channels import ChannelStatusRead, DisconnectRequest, SyncRead, WhatsAppConnectRequest
 from app.services.audit import record_audit
@@ -188,9 +190,11 @@ def get_microsoft_connect(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ProviderError as exc:
         raise _provider_error(exc) from exc
+    bind(new_request_id(), attempt_id(state))
     redirect_uri = settings.resolved_microsoft_redirect_uri()
     logger.info(
-        "Microsoft OAuth initiated business=%s user=%s redirect=%s tenant=%s path_ok=%s trailing_slash=%s",
+        "%sMicrosoft OAuth initiated business=%s user=%s redirect=%s tenant=%s path_ok=%s trailing_slash=%s",
+        prefix(),
         principal.business_id,
         principal.user.id,
         redirect_uri,
@@ -208,17 +212,22 @@ def get_microsoft_callback(
     state: str = "",
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
+    bind(new_request_id(), attempt_id(state))
+    provider_error_present = bool(_safe_oauth_error(request.query_params.get("error")))
     logger.info(
-        "Microsoft OAuth callback reached code_present=%s state_present=%s provider_error=%s",
+        "%sMicrosoft OAuth callback received code_present=%s state_present=%s provider_error=%s tenant=%s",
+        prefix(),
         bool(code.strip()),
         bool(state.strip()),
-        bool(_safe_oauth_error(request.query_params.get("error"))),
+        provider_error_present,
+        get_settings().microsoft_tenant_id.strip() or "common",
     )
     provider_error = _safe_oauth_error(request.query_params.get("error"))
     if provider_error:
         reason = _microsoft_provider_reason(provider_error, request.query_params.get("error_subcode"))
         logger.warning(
-            "Microsoft OAuth callback rejected category=provider code=%s reason=%s",
+            "%sMicrosoft OAuth callback rejected category=provider code=%s reason=%s",
+            prefix(),
             provider_error,
             reason,
         )
@@ -228,6 +237,51 @@ def get_microsoft_callback(
         lambda: complete_microsoft_oauth(session, code, state, _viewer_id(request, session)),
         "microsoft365",
     )
+
+
+@router.get("/integrations/microsoft/webhook")
+async def microsoft_webhook_validation(request: Request, session: Session = Depends(get_db)) -> Response:
+    return await _microsoft_webhook(request, session)
+
+
+@router.post("/integrations/microsoft/webhook")
+async def microsoft_webhook(request: Request, session: Session = Depends(get_db)) -> Response:
+    return await _microsoft_webhook(request, session)
+
+
+async def _microsoft_webhook(request: Request, session: Session) -> Response:
+    presented = request.query_params.get("validationToken")
+    if presented is not None:
+        try:
+            token = validation_token(presented)
+        except ProviderError as exc:
+            raise HTTPException(status_code=400, detail="The Microsoft notification is not valid.") from exc
+        return PlainTextResponse(token, status_code=200)
+    if request.method != "POST":
+        raise HTTPException(status_code=400, detail="The Microsoft notification is not valid.")
+    body = await request.body()
+    try:
+        receive_microsoft_notification(session, body)
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail="The Microsoft notification is not valid.") from exc
+    return Response(status_code=202)
+
+
+@router.post("/integrations/microsoft/watch", response_model=ChannelStatusRead)
+def post_microsoft_watch(
+    business_id: uuid.UUID = Query(),
+    principal: Principal = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict:
+    if business_id != principal.business_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this business.")
+    try:
+        register_microsoft_subscription(session, principal.business_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProviderError as exc:
+        raise _provider_error(exc) from exc
+    return _one(session, principal.business_id, IntegrationProvider.MICROSOFT365)
 
 
 @router.post("/integrations/microsoft/sync", response_model=SyncRead)
@@ -292,13 +346,17 @@ def _oauth_error_redirect(provider: str, reason: str | None) -> RedirectResponse
     query = f"connection=error&provider={provider}"
     if reason in _OAUTH_REASONS:
         query = f"{query}&reason={reason}"
-    logger.info("OAuth redirect provider=%s destination=/settings/integrations?%s", provider, query)
+    if provider == "microsoft365":
+        logger.warning("%sMicrosoft OAuth result=failure category=%s", prefix(), reason or "unspecified")
+    logger.info("%sOAuth redirect provider=%s destination=/settings/integrations?%s", prefix(), provider, query)
     target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
     return RedirectResponse(f"{target}?{query}", status_code=302)
 
 
 def _oauth_redirect(provider: str, query: str) -> RedirectResponse:
-    logger.info("OAuth redirect provider=%s destination=/settings/integrations?%s", provider, query)
+    if provider == "microsoft365":
+        logger.info("%sMicrosoft OAuth result=success category=connected", prefix())
+    logger.info("%sOAuth redirect provider=%s destination=/settings/integrations?%s", prefix(), provider, query)
     target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
     return RedirectResponse(f"{target}?{query}", status_code=302)
 

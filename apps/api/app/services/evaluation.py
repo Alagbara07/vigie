@@ -8,6 +8,7 @@ from app.core.config import Settings, get_settings
 from app.domain.errors import NotFoundError
 from app.evaluators.base import Evaluator, EvaluatorOutcome
 from app.evaluators.overdue_payment import OverduePaymentEvaluator
+from app.evaluators.payment_claim import PaymentClaimEvaluator
 from app.evaluators.unanswered_request import UnansweredRequestEvaluator
 from app.models import Business
 from app.schemas.evaluation import EvaluationRead
@@ -19,6 +20,7 @@ def default_evaluators(settings: Settings) -> tuple[Evaluator, ...]:
     return (
         OverduePaymentEvaluator(),
         UnansweredRequestEvaluator(settings.unanswered_request_threshold_minutes),
+        PaymentClaimEvaluator(),
     )
 
 

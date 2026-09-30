@@ -1,6 +1,7 @@
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
 from app.core.config import get_settings
 from app.main import create_app
@@ -184,3 +185,13 @@ def test_demo_mode_follows_the_environment() -> None:
         assert get_settings().vigie_demo_mode is False
     with _env(VIGIE_DEMO_MODE="true"):
         assert get_settings().vigie_demo_mode is True
+
+
+def test_render_renews_gmail_watches_and_microsoft_subscriptions() -> None:
+    root = Path(__file__).resolve().parents[3]
+    blueprint = (root / "render.yaml").read_text(encoding="utf-8")
+    assert "python -m app.jobs.renew_gmail_watches" in blueprint
+    assert "python -m app.jobs.renew_microsoft_subscriptions" in blueprint
+    assert "python -m app.jobs.evaluate_signals" in blueprint
+    assert "vigie-microsoft-subscription-renewal" in blueprint
+    assert "vigie-signal-evaluation" in blueprint

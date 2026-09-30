@@ -13,6 +13,7 @@ import {
   connectWhatsapp,
   disconnectChannel,
   enableGmailListening,
+  enableMicrosoftListening,
   loadChannels,
   loadDemoMessages,
   oauthConnectPath,
@@ -137,8 +138,11 @@ export function IntegrationsLoader() {
           onEnableListening={async (provider) => {
             if (provider === "gmail") {
               await enableGmailListening(businessId);
-              setChannels(await loadChannels(businessId));
             }
+            if (provider === "microsoft365") {
+              await enableMicrosoftListening(businessId);
+            }
+            setChannels(await loadChannels(businessId));
           }}
           connectionIssue={oauthIssue(connectionResult, connectionProvider, connectionReason)}
           onSend={async ({ customerName, text }) => {

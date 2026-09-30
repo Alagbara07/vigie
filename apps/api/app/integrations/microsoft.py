@@ -22,6 +22,7 @@ from app.integrations.connections import (
 from app.models import ChannelConnection, IntegrationCredential
 from app.services.audit import record_audit
 from app.integrations.http_client import get_json, post_form
+from app.integrations.oauth_log import log_exception, prefix
 from app.integrations.messages import NormalizedMessage
 from app.integrations.provider import OutboundDisabled
 from app.services.ingestion import ingest_message
@@ -111,19 +112,14 @@ def complete_microsoft_oauth(
 ) -> None:
     settings = get_settings()
     _log_redirect(settings)
-    logger.info(
-        "Microsoft OAuth callback reached code_present=%s state_present=%s",
-        bool(code.strip()),
-        bool(state.strip()),
-    )
     if not settings.microsoft_configured():
-        logger.warning("Microsoft OAuth callback rejected category=not_configured")
+        logger.warning("%sMicrosoft OAuth callback rejected category=not_configured", prefix())
         raise ProviderError("Configuration required.", reason="finish")
     if not state.strip():
-        logger.warning("Microsoft OAuth callback rejected category=state stage=missing")
+        logger.warning("%sMicrosoft OAuth callback rejected category=state stage=missing", prefix())
         raise ProviderError("Invalid or expired connection attempt.", reason="verify")
     if not code.strip():
-        logger.warning("Microsoft OAuth callback rejected category=missing_code")
+        logger.warning("%sMicrosoft OAuth callback rejected category=missing_code", prefix())
         raise ProviderError(_PROVIDER_FAILURE, reason="finish")
     try:
         business_id, user_id = consume_oauth_state(
@@ -132,12 +128,14 @@ def complete_microsoft_oauth(
             IntegrationProvider.MICROSOFT365,
             expected_user_id,
         )
-    except ProviderError:
-        logger.warning("Microsoft OAuth callback rejected category=state")
+    except ProviderError as exc:
+        log_exception(logger, "state", exc)
+        logger.warning("%sMicrosoft OAuth callback rejected category=state", prefix())
         raise
-    logger.info("Microsoft OAuth state accepted business=%s user=%s", business_id, user_id)
+    logger.info("%sMicrosoft OAuth state accepted business=%s user=%s", prefix(), business_id, user_id)
     logger.info(
-        "Microsoft OAuth token exchange started business=%s redirect=%s",
+        "%sMicrosoft OAuth token exchange started business=%s redirect=%s",
+        prefix(),
         business_id,
         settings.resolved_microsoft_redirect_uri(),
     )
@@ -154,24 +152,27 @@ def complete_microsoft_oauth(
             },
             purpose="microsoft_token",
         )
-    except ProviderError:
-        logger.warning("Microsoft OAuth token exchange failed business=%s category=token", business_id)
+    except ProviderError as exc:
+        log_exception(logger, "token", exc)
+        logger.warning("%sMicrosoft OAuth token exchange failed business=%s category=token", prefix(), business_id)
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     access_token = tokens.get("access_token")
     refresh = tokens.get("refresh_token")
     if not isinstance(access_token, str) or not access_token:
         logger.warning(
-            "Microsoft OAuth token exchange failed business=%s category=token access_present=false refresh_present=%s",
+            "%sMicrosoft OAuth token exchange failed business=%s category=token access_present=false refresh_present=%s",
+            prefix(),
             business_id,
             isinstance(refresh, str) and bool(refresh),
         )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish")
     _log_granted_scopes(tokens, business_id)
-    logger.info("Microsoft Graph profile lookup started business=%s", business_id)
+    logger.info("%sMicrosoft Graph profile lookup started business=%s", prefix(), business_id)
     try:
         profile = get_json(_ME_URL, access_token, purpose="microsoft_graph_profile")
-    except ProviderError:
-        logger.warning("Microsoft Graph profile lookup failed business=%s category=profile", business_id)
+    except ProviderError as exc:
+        log_exception(logger, "profile", exc)
+        logger.warning("%sMicrosoft Graph profile lookup failed business=%s category=profile", prefix(), business_id)
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     mail_value = profile.get("mail")
     upn_value = profile.get("userPrincipalName")
@@ -181,14 +182,16 @@ def complete_microsoft_oauth(
     account_id = str(profile.get("id") or email).strip()
     if not email or not account_id:
         logger.warning(
-            "Microsoft Graph profile lookup failed business=%s category=mailbox mail_present=%s upn_present=%s",
+            "%sMicrosoft Graph profile lookup failed business=%s category=mailbox mail_present=%s upn_present=%s",
+            prefix(),
             business_id,
             mail_present,
             upn_present,
         )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish")
     logger.info(
-        "Microsoft Graph profile lookup succeeded business=%s mail_present=%s upn_present=%s mailbox=present",
+        "%sMicrosoft Graph profile lookup succeeded business=%s mail_present=%s upn_present=%s mailbox=present",
+        prefix(),
         business_id,
         mail_present,
         upn_present,
@@ -204,11 +207,17 @@ def complete_microsoft_oauth(
             metadata={"mail": email, "profile_name": str(profile.get("displayName") or email).strip(), "scope": _SCOPE},
             connected_by_user_id=user_id,
         )
-    except ConflictError:
-        logger.warning("Microsoft connection persistence failed business=%s category=conflict", business_id)
+    except ConflictError as exc:
+        log_exception(logger, "conflict", exc)
+        logger.warning("%sMicrosoft connection persistence failed business=%s category=conflict", prefix(), business_id)
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
-    except NotFoundError:
-        logger.warning("Microsoft connection persistence failed business=%s category=missing_business", business_id)
+    except NotFoundError as exc:
+        log_exception(logger, "missing_business", exc)
+        logger.warning(
+            "%sMicrosoft connection persistence failed business=%s category=missing_business",
+            prefix(),
+            business_id,
+        )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     try:
         store_credential(
@@ -219,12 +228,13 @@ def complete_microsoft_oauth(
             expires_at=_expiry(tokens.get("expires_in")),
         )
     except Exception as exc:
-        logger.warning("Microsoft connection persistence failed business=%s category=persist", business_id)
+        log_exception(logger, "persist", exc)
+        logger.warning("%sMicrosoft connection persistence failed business=%s category=persist", prefix(), business_id)
         _revert_microsoft_connection(session, connection.id, snapshot)
         if isinstance(exc, ProviderError):
             raise ProviderError(str(exc), reason="finish") from exc
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from exc
-    logger.info("Microsoft credential stored business=%s connection=%s", business_id, connection.id)
+    logger.info("%sMicrosoft credential stored business=%s connection=%s", prefix(), business_id, connection.id)
     record_audit(
         session,
         user_id=user_id,
@@ -235,10 +245,14 @@ def complete_microsoft_oauth(
         metadata={"provider": IntegrationProvider.MICROSOFT365.value},
     )
     logger.info(
-        "Microsoft connection stored business=%s connection=%s status=connected",
+        "%sMicrosoft connection stored business=%s connection=%s status=connected",
+        prefix(),
         business_id,
         connection.id,
     )
+    from app.integrations.microsoft_push import prepare_microsoft_realtime
+
+    prepare_microsoft_realtime(session, business_id)
 
 
 def _log_redirect(settings: Settings) -> None:
@@ -250,7 +264,8 @@ def _log_redirect(settings: Settings) -> None:
         host = rest.split("/", 1)[0].split("@")[-1].split(":", 1)[0].lower()
         path = "/" + rest.split("/", 1)[1] if "/" in rest else ""
     logger.info(
-        "Microsoft OAuth redirect scheme_https=%s path_ok=%s trailing_slash=%s local=%s explicit=%s",
+        "%sMicrosoft OAuth redirect scheme_https=%s path_ok=%s trailing_slash=%s local=%s explicit=%s",
+        prefix(),
         uri.startswith("https://"),
         path == "/api/integrations/microsoft/callback",
         uri.endswith("/"),
@@ -271,7 +286,8 @@ def _log_granted_scopes(tokens: dict, business_id: uuid.UUID) -> None:
                 names.add(name)
     refresh = tokens.get("refresh_token")
     logger.info(
-        "Microsoft OAuth token exchange succeeded business=%s scopes=%s refresh_present=%s",
+        "%sMicrosoft OAuth token exchange succeeded business=%s scopes=%s refresh_present=%s",
+        prefix(),
         business_id,
         ",".join(sorted(names)) if names else "absent",
         isinstance(refresh, str) and bool(refresh),
@@ -317,7 +333,7 @@ def _revert_microsoft_connection(session: Session, connection_id: uuid.UUID, sna
         row.last_error = snapshot["last_error"]
         row.connection_metadata = snapshot["connection_metadata"]
     session.commit()
-    logger.info("Microsoft connection persistence rolled back connection=%s", connection_id)
+    logger.info("%sMicrosoft connection persistence rolled back connection=%s", prefix(), connection_id)
 
 
 def sync_microsoft(session: Session, business_id: uuid.UUID) -> dict[str, int]:
@@ -333,16 +349,8 @@ def sync_microsoft(session: Session, business_id: uuid.UUID) -> dict[str, int]:
         messages = listing.get("value") if isinstance(listing.get("value"), list) else []
         stored = 0
         for item in messages:
-            if not isinstance(item, dict):
-                continue
-            incoming = MicrosoftAdapter().normalize_message(business_id, item)
-            if incoming is None:
-                continue
-            result = ingest_message(session, incoming)
-            if not result.created:
-                continue
-            stored += 1
-            schedule_message_analysis(session, result.message.id, business_id, incoming.timestamp)
+            if isinstance(item, dict) and store_microsoft_message(session, business_id, item):
+                stored += 1
         mark_sync(session, connection.id, None, failed=False)
         logger.info("Synced Microsoft 365 business=%s stored=%s", business_id, stored)
         return {"stored": stored}
@@ -352,6 +360,20 @@ def sync_microsoft(session: Session, business_id: uuid.UUID) -> dict[str, int]:
     except (AIProviderError, InvalidProposalError) as exc:
         mark_sync(session, connection.id, "VIGIE could not interpret the latest message.", failed=False)
         raise ProviderError("VIGIE could not sync Microsoft 365.") from exc
+
+
+def store_microsoft_message(session: Session, business_id: uuid.UUID, payload: dict) -> bool:
+    incoming = MicrosoftAdapter().normalize_message(business_id, payload)
+    if incoming is None:
+        return False
+    result = ingest_message(session, incoming)
+    if not result.created:
+        return False
+    try:
+        schedule_message_analysis(session, result.message.id, business_id, incoming.timestamp)
+    except (AIProviderError, InvalidProposalError):
+        logger.warning("Microsoft message stored but not interpreted business=%s", business_id)
+    return True
 
 
 def access_token_for(session: Session, connection: ChannelConnection) -> str:

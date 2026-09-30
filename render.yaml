@@ -103,3 +103,45 @@ services:
         sync: false
       - key: GMAIL_PUBSUB_SERVICE_ACCOUNT
         sync: false
+
+  - type: cron
+    name: vigie-microsoft-subscription-renewal
+    runtime: python
+    rootDir: apps/api
+    schedule: "30 6 * * *"
+    buildCommand: pip install .
+    startCommand: python -m app.jobs.renew_microsoft_subscriptions
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: VIGIE_DEMO_MODE
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: API_PUBLIC_URL
+        sync: false
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        sync: false
+      - key: MICROSOFT_REDIRECT_URI
+        sync: false
+
+  - type: cron
+    name: vigie-signal-evaluation
+    runtime: python
+    rootDir: apps/api
+    schedule: "15 * * * *"
+    buildCommand: pip install .
+    startCommand: python -m app.jobs.evaluate_signals
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: VIGIE_DEMO_MODE
+        value: "false"
+      - key: DATABASE_URL
+        sync: false

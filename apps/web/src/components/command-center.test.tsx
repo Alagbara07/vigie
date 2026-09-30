@@ -105,7 +105,7 @@ describe("command center", () => {
     );
 
     expect(screen.getByRole("heading", { name: "You're all caught up." })).toBeInTheDocument();
-    expect(screen.getByText("Nothing needs your attention right now.")).toBeInTheDocument();
+    expect(screen.getByText("No signals yet.")).toBeInTheDocument();
   });
 
   it("renders a recommendation on the signal that has one", () => {

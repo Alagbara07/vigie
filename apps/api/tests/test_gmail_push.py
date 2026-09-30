@@ -147,6 +147,17 @@ def test_pubsub_notification_ingests_normalizes_and_isolates(
     row = _connection(db_session, business.id)
     assert row.connection_metadata["history_id"] == "22"
     assert row.connection_metadata["last_notification_at"]
+    claim_signals = list(
+        db_session.scalars(
+            select(Signal).where(Signal.business_id == business.id, Signal.signal_type == "PAYMENT_CLAIM")
+        )
+    )
+    assert len(claim_signals) == 1
+    assert "not verified" in claim_signals[0].description
+    overdue = db_session.scalar(
+        select(Signal).where(Signal.business_id == business.id, Signal.signal_type == "OVERDUE_PAYMENT")
+    )
+    assert overdue is None
 
 
 def test_duplicate_notification_does_not_duplicate_signals(
@@ -400,6 +411,110 @@ def test_error_keeps_the_mailbox_and_pauses_only_an_existing_watch(api_client: T
     assert paused["availability"] == "error"
     assert paused["account_label"] == EMAIL
     assert paused["realtime"] == "needs_attention"
+
+
+def test_oauth_watch_notification_and_evaluation_create_a_signal(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.demo.clock import AFTER_DUE
+    from app.services.evaluation import run_evaluation
+
+    business = _business(db_session, "gmail-lifecycle")
+
+    def tokens(url: str, data: dict[str, str]) -> dict:
+        del url
+        assert data["client_secret"] == "google-secret"
+        assert "gmail.send" not in data.get("scope", "")
+        assert "gmail.modify" not in data.get("scope", "")
+        return {"access_token": TOKEN, "refresh_token": REFRESH, "expires_in": 3600}
+
+    history_calls = {"count": 0}
+
+    def reading(url: str, access_token: str) -> dict:
+        if "/history" in url:
+            history_calls["count"] += 1
+            if history_calls["count"] == 1:
+                return {"historyId": "15", "history": []}
+        return _reading_get(url, access_token)
+
+    monkeypatch.setattr("app.integrations.gmail.post_form", tokens)
+    monkeypatch.setattr("app.integrations.gmail.get_json", lambda url, access_token: {"emailAddress": EMAIL})
+    _patch_gmail(monkeypatch, reading, _watch_post)
+    _allow_push(monkeypatch)
+    with _pubsub_env():
+        started = api_client.get(
+            "/api/integrations/gmail/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        assert "gmail.readonly" in started.headers["location"]
+        assert "gmail.send" not in started.headers["location"]
+        assert "gmail.modify" not in started.headers["location"]
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        finished = api_client.get(
+            "/api/integrations/gmail/callback",
+            params={"code": "auth-code", "state": state},
+            follow_redirects=False,
+        )
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+        delivered = api_client.post(
+            "/api/integrations/gmail/pubsub",
+            json=_push(EMAIL),
+            headers={"Authorization": "Bearer push"},
+        )
+    assert finished.status_code == 302
+    gmail = _gmail_status(listed.json())
+    assert gmail["availability"] == "connected"
+    assert gmail["account_label"] == EMAIL
+    assert gmail["listening"] is True
+    row = _connection(db_session, business.id)
+    secret = db_session.get(IntegrationCredential, row.id)
+    assert secret is not None and secret.access_token.startswith("fernet:")
+    assert TOKEN not in secret.access_token
+    assert row.connection_metadata["watch_enabled"] is True
+    assert row.connection_metadata["history_id"]
+    assert delivered.status_code == 200
+    assert delivered.json()["stored"] >= 1
+    promise = db_session.scalar(select(Message).where(Message.external_message_id == "g-pay"))
+    assert promise is not None and promise.content == PROMISE
+    evaluated = run_evaluation(db_session, business.id, AFTER_DUE)
+    assert evaluated.signals_created == 1
+    listed_signals = api_client.get("/api/signals", params={"business_id": str(business.id)})
+    assert listed_signals.status_code == 200
+    kinds = sorted(item["signal_type"] for item in listed_signals.json())
+    assert kinds == ["OVERDUE_PAYMENT", "PAYMENT_CLAIM"]
+
+
+def test_disconnect_stops_the_gmail_watch(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    business = _business(db_session, "gmail-stop")
+    row = _connect(db_session, business, EMAIL, history_id="10")
+    _stamp_watch(db_session, row, datetime.now(timezone.utc) + timedelta(days=2))
+    calls: list[str] = []
+
+    def post(url: str, access_token: str, payload: dict) -> dict:
+        assert access_token == TOKEN
+        calls.append(url)
+        return {}
+
+    _patch_gmail(monkeypatch, _reading_get, post)
+    _allow_push(monkeypatch)
+    with _pubsub_env():
+        disconnected = api_client.post("/api/integrations/gmail/disconnect", json={"business_id": str(business.id)})
+        delivered = api_client.post(
+            "/api/integrations/gmail/pubsub",
+            json=_push(EMAIL, "11"),
+            headers={"Authorization": "Bearer push"},
+        )
+    assert any(url.endswith("/users/me/stop") for url in calls)
+    assert disconnected.status_code == 200
+    assert delivered.json()["stored"] == 0
+    assert _count(db_session, Message, business.id) == 0
 
 
 def test_manual_status_when_pubsub_is_not_configured(api_client: TestClient, db_session: Session) -> None:

@@ -11,6 +11,7 @@ from app.auth.crypto import open_secret, seal_secret
 from app.core.config import Settings, get_settings
 from app.domain.enums import ConnectionStatus, IntegrationProvider
 from app.domain.errors import ConflictError, NotFoundError, ProviderError
+from app.integrations.oauth_log import prefix
 from app.models import Business, ChannelConnection, IntegrationCredential, OAuthState
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,12 @@ def list_channels(session: Session, business_id: uuid.UUID, settings: Settings |
             extra = gmail_realtime_fields(row, active)
             last_error = extra.pop("last_error")
             realtime = extra
+        elif provider is IntegrationProvider.MICROSOFT365:
+            from app.integrations.microsoft_push import microsoft_realtime_fields
+
+            extra = microsoft_realtime_fields(row, active)
+            last_error = extra.pop("last_error")
+            realtime = extra
         listed.append(
             {
                 "provider": provider.value,
@@ -109,10 +116,19 @@ def disconnect(session: Session, business_id: uuid.UUID, provider: IntegrationPr
     if provider is IntegrationProvider.DEMO:
         raise ProviderError("The demo connector is not a live account.")
     row = _require_connection(session, business_id, provider)
+    if provider is IntegrationProvider.GMAIL:
+        from app.integrations.gmail_push import stop_gmail_watch
+
+        stop_gmail_watch(session, row)
+    if provider is IntegrationProvider.MICROSOFT365:
+        from app.integrations.microsoft_push import stop_microsoft_subscription
+
+        stop_microsoft_subscription(session, row)
+    row = session.get(ChannelConnection, row.id) or row
     row.status = ConnectionStatus.DISCONNECTED.value
     row.external_account_id = None
     row.connected_at = None
-    if provider is IntegrationProvider.GMAIL:
+    if provider in {IntegrationProvider.GMAIL, IntegrationProvider.MICROSOFT365}:
         row.connection_metadata = {}
     secret = session.get(IntegrationCredential, row.id)
     if secret is not None:
@@ -247,13 +263,14 @@ def consume_oauth_state(
     now = datetime.now(timezone.utc)
     stage = _oauth_state_stage(session, row, now, expected_user_id)
     if stage is not None:
-        logger.warning("OAuth state rejected provider=%s stage=%s", provider.value, stage)
+        logger.warning("%sOAuth state rejected provider=%s stage=%s", prefix(), provider.value, stage)
         raise ProviderError("Invalid or expired connection attempt.", reason="verify")
     assert row is not None
     row.used_at = now
     session.commit()
     logger.info(
-        "OAuth state accepted provider=%s business=%s user=%s",
+        "%sOAuth state accepted provider=%s business=%s user=%s",
+        prefix(),
         provider.value,
         row.business_id,
         row.user_id,
@@ -301,7 +318,8 @@ def mark_sync(session: Session, connection_id: uuid.UUID, error: str | None, *, 
     row = session.get(ChannelConnection, connection_id)
     if row is None:
         return
-    row.last_sync_at = datetime.now(timezone.utc)
+    if not failed:
+        row.last_sync_at = datetime.now(timezone.utc)
     row.last_error = error
     if failed:
         row.status = ConnectionStatus.ERROR.value

@@ -98,7 +98,7 @@ describe("integration state", () => {
     expect(gmail.summary).toBe("VIGIE imports messages for analysis. VIGIE does not send email.");
 
     expect(microsoft.sync).toBe(true);
-    expect(microsoft.listen).toBe(false);
+    expect(microsoft.listen).toBe(true);
     expect(microsoft.resource?.label).toBe("Connected Outlook mailbox");
 
     expect(whatsapp.sync).toBe(false);

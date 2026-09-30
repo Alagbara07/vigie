@@ -188,7 +188,10 @@ export function integrationView(
     webhookMissing: stored === "ready" && channel.provider === "whatsapp" && !channel.webhookUrl,
     showPhoneField: channel.provider === "whatsapp" && channel.configured && (stored === "ready" || stored === "needs_attention" || phase === "needs_attention"),
     sync: stored === "connected" && SUPPORTS_SYNC.has(channel.provider),
-    listen: stored === "connected" && channel.provider === "gmail" && !channel.listening,
+    listen:
+      stored === "connected" &&
+      (channel.provider === "gmail" || channel.provider === "microsoft365") &&
+      !channel.listening,
     disconnect: stored === "connected" || stored === "needs_attention",
     primary: primaryAction(stored, name),
   };
@@ -300,7 +303,7 @@ function resourceLabel(channel: ChannelStatus): { label: string; value: string }
 
 function activityLine(channel: ChannelStatus, phase: IntegrationPhase): string | null {
   if ((phase === "connected" || phase === "syncing") && channel.lastSyncAt) {
-    return `Last sync: ${formatDate(channel.lastSyncAt, "UTC")}`;
+    return `Last successful sync: ${formatDate(channel.lastSyncAt, "UTC")}`;
   }
   if (phase === "needs_attention" && channel.lastSyncAt) {
     return `Last successful sync: ${formatDate(channel.lastSyncAt, "UTC")}`;
@@ -312,7 +315,7 @@ function activityLine(channel: ChannelStatus, phase: IntegrationPhase): string |
 }
 
 function listeningLine(channel: ChannelStatus, phase: IntegrationPhase): string | null {
-  if (channel.provider !== "gmail") return null;
+  if (channel.provider !== "gmail" && channel.provider !== "microsoft365") return null;
   if (phase === "needs_attention" && channel.realtime === "needs_attention") {
     return "Automatic updates are paused until you reconnect.";
   }

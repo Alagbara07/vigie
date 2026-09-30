@@ -21,6 +21,21 @@ from app.integrations.microsoft import MicrosoftAdapter
 from app.integrations.provider import OutboundDisabled
 from app.models import Business, BusinessEvent, ChannelConnection, Commitment, IntegrationCredential, Message, OAuthState
 
+@pytest.fixture(autouse=True)
+def _stub_microsoft_graph_subscriptions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OAuth tests must not call Microsoft Graph to create a subscription."""
+
+    def graph(method: str, url: str, access_token: str, payload: dict | None, *, purpose: str) -> dict:
+        del method, url, access_token, payload
+        if purpose == "microsoft_subscription":
+            return {"id": "sub-test", "expirationDateTime": "2027-01-01T00:00:00.0000000Z"}
+        if purpose in {"microsoft_subscription_delete", "microsoft_subscription_renew"}:
+            return {}
+        raise AssertionError(purpose)
+
+    monkeypatch.setattr("app.integrations.microsoft_push._graph", graph)
+
+
 LAGOS = ZoneInfo("Africa/Lagos")
 WHEN = datetime(2026, 9, 24, 9, 0, tzinfo=LAGOS)
 PROMISE = "I'll pay the remaining ₦150,000 on Friday."
@@ -422,12 +437,28 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
     monkeypatch.setattr("app.integrations.microsoft.get_json", denied)
     logging.getLogger("app.integrations.microsoft").disabled = False
     logging.getLogger("app.api.channels").disabled = False
+    logging.getLogger("app.integrations.connections").disabled = False
+    from app.integrations.oauth_log import attempt_id
+
     with _env(
         MICROSOFT_CLIENT_ID="ms-client",
         MICROSOFT_CLIENT_SECRET="ms-secret",
         MICROSOFT_TENANT_ID="common",
         API_PUBLIC_URL="https://vigie-api.example",
     ), caplog.at_level(logging.INFO):
+        missing = api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code"},
+            follow_redirects=False,
+        )
+        assert "Microsoft OAuth callback received" in caplog.text
+        assert "code_present=True" in caplog.text
+        assert "state_present=False" in caplog.text
+        assert "category=state stage=missing" in caplog.text
+        assert "token exchange started" not in caplog.text
+        assert "auth-code" not in caplog.text
+        assert "reason=verify" in missing.headers["location"]
+        caplog.clear()
         started = api_client.get(
             "/api/integrations/microsoft/connect",
             params={"business_id": str(business.id)},
@@ -449,9 +480,17 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
     assert db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id)) is None
     assert "Microsoft OAuth initiated" in caplog.text
     assert "redirect=https://vigie-api.example/api/integrations/microsoft/callback" in caplog.text
-    assert "Microsoft OAuth callback reached" in caplog.text
+    assert "Microsoft OAuth callback received" in caplog.text
+    assert caplog.text.index("Microsoft OAuth callback received") < caplog.text.index("category=profile")
     assert "code_present=True" in caplog.text
     assert "state_present=True" in caplog.text
+    assert f"attempt={attempt_id(state)}" in caplog.text
+    initiated = next(line for line in caplog.text.splitlines() if "Microsoft OAuth initiated" in line)
+    received = next(line for line in caplog.text.splitlines() if "Microsoft OAuth callback received" in line)
+    assert f"attempt={attempt_id(state)}" in initiated
+    assert f"attempt={attempt_id(state)}" in received
+    assert "error_type=ProviderError" in caplog.text
+    assert "Microsoft OAuth result=failure category=finish" in caplog.text
     assert "Microsoft Graph profile lookup failed" in caplog.text
     assert "ms-access-token" not in caplog.text
     assert "ms-access-token" not in caplog.text
@@ -484,9 +523,15 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
     assert "connection=error" in failed.headers["location"]
     assert "provider=microsoft365" in failed.headers["location"]
     assert "reason=finish" in failed.headers["location"]
+    assert caplog.text.index("Microsoft OAuth callback received") < caplog.text.index("category=token")
     assert "Microsoft OAuth token exchange failed" in caplog.text
+    assert "error_type=ProviderError" in caplog.text
+    assert "category=profile" not in caplog.text
+    assert "Microsoft OAuth result=failure category=finish" in caplog.text
+    assert f"attempt={attempt_id(state)}" in caplog.text
     assert "auth-code" not in caplog.text
     assert "ms-secret" not in caplog.text
+    assert "ms-access-token" not in caplog.text
 
 
 def test_microsoft_reconnect_failure_keeps_the_previous_mailbox(

@@ -1,4 +1,5 @@
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -22,10 +23,31 @@ from app.auth.cookies import SESSION_COOKIE
 from app.auth.deps import reject_cross_site
 from app.core.config import get_settings
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+def _configure_logging() -> None:
+    """Send application logs to stdout next to the uvicorn access log.
+
+    Uvicorn writes access lines such as GET /api/health to stdout and does not
+    attach a handler to the root logger. Without this, diagnostic INFO lines
+    stay on stderr or are dropped.
+    """
+
+    root = logging.getLogger()
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    has_stdout = any(
+        isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) is sys.stdout
+        for handler in root.handlers
+    )
+    if not has_stdout:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+    root.setLevel(logging.INFO)
+    app_logger = logging.getLogger("app")
+    app_logger.setLevel(logging.INFO)
+    app_logger.disabled = False
+
+
+_configure_logging()
 logger = logging.getLogger(__name__)
 
 

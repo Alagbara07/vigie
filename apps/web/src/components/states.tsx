@@ -37,7 +37,7 @@ export function EmptyAttention() {
   return (
     <div className="border border-[var(--line)] bg-[var(--panel)] px-5 py-8">
       <p className="max-w-md text-sm leading-6 text-[var(--muted)]">
-        Nothing needs your attention right now.
+        No signals yet.
       </p>
     </div>
   );
