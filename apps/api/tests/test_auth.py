@@ -276,10 +276,70 @@ def test_cross_site_post_is_rejected(strict_client: TestClient) -> None:
     strict_client.post("/api/auth/signup", json={"email": "ada@csrf.test", "name": "Ada", "password": "correct-horse"})
     blocked = strict_client.post(
         "/api/auth/logout",
-        headers={"origin": "https://evil.example"},
+        headers={"origin": "https://evil.example", "sec-fetch-site": "cross-site"},
     )
     assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Cross-site request blocked."
     assert strict_client.get("/api/auth/session").status_code == 200
+
+
+def test_production_origin_login_and_signup_stay_available(strict_client: TestClient) -> None:
+    import os
+
+    previous = {key: os.environ.get(key) for key in ("APP_ENV", "PUBLIC_WEB_URL", "CORS_ORIGINS")}
+    os.environ["APP_ENV"] = "production"
+    os.environ["PUBLIC_WEB_URL"] = "https://vigie-web.example"
+    os.environ["CORS_ORIGINS"] = ""
+    get_settings.cache_clear()
+    try:
+        created = strict_client.post(
+            "/api/auth/signup",
+            json={"email": "ada@origin.test", "name": "Ada", "password": "correct-horse"},
+            headers={"origin": "https://vigie-web.example", "sec-fetch-site": "same-origin"},
+        )
+        assert created.status_code == 201
+        session = {"cookie": f"vigie_session={created.cookies['vigie_session']}"}
+        duplicate = strict_client.post(
+            "/api/auth/signup",
+            json={"email": "ada@origin.test", "name": "Ada", "password": "correct-horse"},
+            headers={"origin": "https://vigie-web.example", "sec-fetch-site": "same-origin", **session},
+        )
+        assert duplicate.status_code == 409
+        wrong = strict_client.post(
+            "/api/auth/login",
+            json={"email": "ada@origin.test", "password": "wrong-password"},
+            headers={"origin": "https://Vigie-Web.example:443", "sec-fetch-site": "cross-site", **session},
+        )
+        assert wrong.status_code == 401
+        logged_in = strict_client.post(
+            "/api/auth/login",
+            json={"email": "ada@origin.test", "password": "correct-horse"},
+            headers={"origin": "https://vigie-web.example", "sec-fetch-site": "same-origin", **session},
+        )
+        assert logged_in.status_code == 200
+        signed_in = {"cookie": f"vigie_session={logged_in.cookies['vigie_session']}"}
+        deployment = strict_client.post(
+            "/api/auth/logout",
+            headers={
+                "origin": "https://vigie-deploy.example",
+                "sec-fetch-site": "same-origin",
+                **signed_in,
+            },
+        )
+        assert deployment.status_code == 204
+        foreign = strict_client.post(
+            "/api/auth/logout",
+            headers={"origin": "https://evil.example", "sec-fetch-site": "cross-site", **signed_in},
+        )
+        assert foreign.status_code == 403
+        assert strict_client.get("/api/signals", params={"business_id": str(uuid.uuid4())}).status_code == 401
+    finally:
+        for key, old in previous.items():
+            if old is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old
+        get_settings.cache_clear()
 
 
 def test_demo_entry_is_hidden_when_demo_mode_is_off(strict_client: TestClient) -> None:
