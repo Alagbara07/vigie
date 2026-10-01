@@ -492,6 +492,7 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
     assert "error_type=ProviderError" in caplog.text
     assert "Microsoft OAuth result=failure category=finish" in caplog.text
     assert "Microsoft Graph profile lookup failed" in caplog.text
+    assert "stage=graph_profile" in caplog.text
     assert "ms-access-token" not in caplog.text
     assert "ms-access-token" not in caplog.text
     assert "ms-secret" not in caplog.text
@@ -525,6 +526,7 @@ def test_microsoft_profile_and_token_failures_do_not_store_a_mailbox(
     assert "reason=finish" in failed.headers["location"]
     assert caplog.text.index("Microsoft OAuth callback received") < caplog.text.index("category=token")
     assert "Microsoft OAuth token exchange failed" in caplog.text
+    assert "stage=token_exchange" in caplog.text
     assert "error_type=ProviderError" in caplog.text
     assert "category=profile" not in caplog.text
     assert "Microsoft OAuth result=failure category=finish" in caplog.text
@@ -694,10 +696,78 @@ def test_microsoft_credential_failure_does_not_leave_a_connected_mailbox(
     assert "ms-access-token" not in failed.headers["location"]
     assert "ms-access-token" not in caplog.text
     assert "category=persist" in caplog.text
+    assert "stage=credential_storage" in caplog.text
     microsoft = next(item for item in listed.json() if item["provider"] == "microsoft365")
     assert microsoft["availability"] == "available"
     assert microsoft["account_label"] is None
     assert db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id)) is None
+
+
+def test_microsoft_missing_mailbox_does_not_store_a_connection(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    business = _business(db_session, "ms-no-mailbox")
+    monkeypatch.setattr("app.integrations.microsoft.post_form", _microsoft_token)
+
+    def nameless(url: str, access_token: str, **kwargs: object) -> dict:
+        del url, access_token, kwargs
+        return {"id": "ms-user-1", "displayName": "Amaka", "mail": None, "userPrincipalName": None}
+
+    monkeypatch.setattr("app.integrations.microsoft.get_json", nameless)
+    logging.getLogger("app.integrations.microsoft").disabled = False
+    with _env(
+        MICROSOFT_CLIENT_ID="ms-client",
+        MICROSOFT_CLIENT_SECRET="ms-secret",
+        MICROSOFT_TENANT_ID="common",
+        API_PUBLIC_URL="https://vigie-api.example",
+    ), caplog.at_level(logging.INFO):
+        failed = _callback(api_client, business.id)
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+    assert "reason=finish" in failed.headers["location"]
+    assert "stage=mailbox_resolution" in caplog.text
+    assert "stage=credential_storage" not in caplog.text
+    assert "ms-access-token" not in caplog.text
+    microsoft = next(item for item in listed.json() if item["provider"] == "microsoft365")
+    assert microsoft["availability"] == "available"
+    assert microsoft["account_label"] is None
+    assert db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id)) is None
+
+
+def test_microsoft_connection_persistence_failure_does_not_store_credentials(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from app.domain.errors import ConflictError
+
+    business = _business(db_session, "ms-persist-conflict")
+    monkeypatch.setattr("app.integrations.microsoft.post_form", _microsoft_token)
+    monkeypatch.setattr("app.integrations.microsoft.get_json", _microsoft_get)
+
+    def blocked(*args, **kwargs):
+        del args, kwargs
+        raise ConflictError("That account is already connected to another business.")
+
+    monkeypatch.setattr("app.integrations.microsoft.save_connection", blocked)
+    logging.getLogger("app.integrations.microsoft").disabled = False
+    with _env(
+        MICROSOFT_CLIENT_ID="ms-client",
+        MICROSOFT_CLIENT_SECRET="ms-secret",
+        MICROSOFT_TENANT_ID="common",
+        API_PUBLIC_URL="https://vigie-api.example",
+    ), caplog.at_level(logging.INFO):
+        failed = _callback(api_client, business.id)
+    assert "reason=finish" in failed.headers["location"]
+    assert "stage=connection_persistence" in caplog.text
+    assert "stage=credential_storage" not in caplog.text
+    assert "ms-access-token" not in caplog.text
+    assert "ms-secret" not in caplog.text
+    assert db_session.scalar(select(ChannelConnection).where(ChannelConnection.business_id == business.id)) is None
+    assert db_session.scalar(select(IntegrationCredential)) is None
 
 
 def test_microsoft_reconnect_updates_the_existing_connection(

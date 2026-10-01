@@ -134,7 +134,7 @@ def complete_microsoft_oauth(
         raise
     logger.info("%sMicrosoft OAuth state accepted business=%s user=%s", prefix(), business_id, user_id)
     logger.info(
-        "%sMicrosoft OAuth token exchange started business=%s redirect=%s",
+        "%sMicrosoft OAuth token exchange started stage=token_exchange business=%s redirect=%s",
         prefix(),
         business_id,
         settings.resolved_microsoft_redirect_uri(),
@@ -154,25 +154,33 @@ def complete_microsoft_oauth(
         )
     except ProviderError as exc:
         log_exception(logger, "token", exc)
-        logger.warning("%sMicrosoft OAuth token exchange failed business=%s category=token", prefix(), business_id)
+        logger.warning(
+            "%sMicrosoft OAuth token exchange failed stage=token_exchange business=%s category=token",
+            prefix(),
+            business_id,
+        )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     access_token = tokens.get("access_token")
     refresh = tokens.get("refresh_token")
     if not isinstance(access_token, str) or not access_token:
         logger.warning(
-            "%sMicrosoft OAuth token exchange failed business=%s category=token access_present=false refresh_present=%s",
+            "%sMicrosoft OAuth token exchange failed stage=token_exchange business=%s category=token access_present=false refresh_present=%s",
             prefix(),
             business_id,
             isinstance(refresh, str) and bool(refresh),
         )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish")
     _log_granted_scopes(tokens, business_id)
-    logger.info("%sMicrosoft Graph profile lookup started business=%s", prefix(), business_id)
+    logger.info("%sMicrosoft Graph profile lookup started stage=graph_profile business=%s", prefix(), business_id)
     try:
         profile = get_json(_ME_URL, access_token, purpose="microsoft_graph_profile")
     except ProviderError as exc:
         log_exception(logger, "profile", exc)
-        logger.warning("%sMicrosoft Graph profile lookup failed business=%s category=profile", prefix(), business_id)
+        logger.warning(
+            "%sMicrosoft Graph profile lookup failed stage=graph_profile business=%s category=profile",
+            prefix(),
+            business_id,
+        )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     mail_value = profile.get("mail")
     upn_value = profile.get("userPrincipalName")
@@ -182,7 +190,7 @@ def complete_microsoft_oauth(
     account_id = str(profile.get("id") or email).strip()
     if not email or not account_id:
         logger.warning(
-            "%sMicrosoft Graph profile lookup failed business=%s category=mailbox mail_present=%s upn_present=%s",
+            "%sMicrosoft Graph profile lookup failed stage=mailbox_resolution business=%s category=mailbox mail_present=%s upn_present=%s",
             prefix(),
             business_id,
             mail_present,
@@ -190,12 +198,13 @@ def complete_microsoft_oauth(
         )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish")
     logger.info(
-        "%sMicrosoft Graph profile lookup succeeded business=%s mail_present=%s upn_present=%s mailbox=present",
+        "%sMicrosoft Graph profile lookup succeeded stage=graph_profile business=%s mail_present=%s upn_present=%s mailbox=present",
         prefix(),
         business_id,
         mail_present,
         upn_present,
     )
+    logger.info("%sMicrosoft mailbox resolved stage=mailbox_resolution business=%s mailbox=present", prefix(), business_id)
     snapshot = _connection_snapshot(session, business_id)
     try:
         connection = save_connection(
@@ -209,12 +218,16 @@ def complete_microsoft_oauth(
         )
     except ConflictError as exc:
         log_exception(logger, "conflict", exc)
-        logger.warning("%sMicrosoft connection persistence failed business=%s category=conflict", prefix(), business_id)
+        logger.warning(
+            "%sMicrosoft connection persistence failed stage=connection_persistence business=%s category=conflict",
+            prefix(),
+            business_id,
+        )
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from None
     except NotFoundError as exc:
         log_exception(logger, "missing_business", exc)
         logger.warning(
-            "%sMicrosoft connection persistence failed business=%s category=missing_business",
+            "%sMicrosoft connection persistence failed stage=connection_persistence business=%s category=missing_business",
             prefix(),
             business_id,
         )
@@ -229,12 +242,21 @@ def complete_microsoft_oauth(
         )
     except Exception as exc:
         log_exception(logger, "persist", exc)
-        logger.warning("%sMicrosoft connection persistence failed business=%s category=persist", prefix(), business_id)
+        logger.warning(
+            "%sMicrosoft credential storage failed stage=credential_storage business=%s category=persist",
+            prefix(),
+            business_id,
+        )
         _revert_microsoft_connection(session, connection.id, snapshot)
         if isinstance(exc, ProviderError):
             raise ProviderError(str(exc), reason="finish") from exc
         raise ProviderError(_PROVIDER_FAILURE, reason="finish") from exc
-    logger.info("%sMicrosoft credential stored business=%s connection=%s", prefix(), business_id, connection.id)
+    logger.info(
+        "%sMicrosoft credential stored stage=credential_storage business=%s connection=%s",
+        prefix(),
+        business_id,
+        connection.id,
+    )
     record_audit(
         session,
         user_id=user_id,
@@ -245,7 +267,7 @@ def complete_microsoft_oauth(
         metadata={"provider": IntegrationProvider.MICROSOFT365.value},
     )
     logger.info(
-        "%sMicrosoft connection stored business=%s connection=%s status=connected",
+        "%sMicrosoft connection stored stage=connection_persistence business=%s connection=%s status=connected",
         prefix(),
         business_id,
         connection.id,
@@ -286,7 +308,7 @@ def _log_granted_scopes(tokens: dict, business_id: uuid.UUID) -> None:
                 names.add(name)
     refresh = tokens.get("refresh_token")
     logger.info(
-        "%sMicrosoft OAuth token exchange succeeded business=%s scopes=%s refresh_present=%s",
+        "%sMicrosoft OAuth token exchange succeeded stage=token_exchange business=%s scopes=%s refresh_present=%s",
         prefix(),
         business_id,
         ",".join(sorted(names)) if names else "absent",

@@ -215,7 +215,7 @@ def get_microsoft_callback(
     bind(new_request_id(), attempt_id(state))
     provider_error_present = bool(_safe_oauth_error(request.query_params.get("error")))
     logger.info(
-        "%sMicrosoft OAuth callback received code_present=%s state_present=%s provider_error=%s tenant=%s",
+        "%sMicrosoft OAuth callback received stage=oauth_code_received code_present=%s state_present=%s provider_error=%s tenant=%s",
         prefix(),
         bool(code.strip()),
         bool(state.strip()),
@@ -355,7 +355,7 @@ def _oauth_error_redirect(provider: str, reason: str | None) -> RedirectResponse
 
 def _oauth_redirect(provider: str, query: str) -> RedirectResponse:
     if provider == "microsoft365":
-        logger.info("%sMicrosoft OAuth result=success category=connected", prefix())
+        logger.info("%sMicrosoft OAuth result=success stage=oauth_success category=connected", prefix())
     logger.info("%sOAuth redirect provider=%s destination=/settings/integrations?%s", prefix(), provider, query)
     target = get_settings().public_web_url.rstrip("/") + "/settings/integrations"
     return RedirectResponse(f"{target}?{query}", status_code=302)

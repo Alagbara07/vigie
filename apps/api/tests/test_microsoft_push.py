@@ -139,6 +139,97 @@ def test_connect_subscribes_and_a_notification_becomes_a_signal(
     assert captured["state"] not in caplog.text
 
 
+def test_subscription_failure_keeps_the_oauth_connection(
+    api_client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    business = _business(db_session, "ms-listen-fail")
+    captured: dict[str, str] = {}
+    attempts = {"graph": 0}
+
+    def tokens(url: str, data: dict[str, str], **kwargs: object) -> dict:
+        del url, kwargs
+        return {"access_token": TOKEN, "refresh_token": REFRESH, "expires_in": 3600, "scope": data.get("scope", "")}
+
+    def profile(url: str, access_token: str, **kwargs: object) -> dict:
+        del url, access_token, kwargs
+        return {"id": "ms-user-listen", "displayName": "Amaka Bello", "mail": EMAIL}
+
+    def graph(method: str, url: str, access_token: str, payload: dict | None, *, purpose: str) -> dict:
+        del url
+        assert access_token == TOKEN
+        attempts["graph"] += 1
+        if attempts["graph"] == 1:
+            raise ProviderError("Real-time listening could not be enabled.")
+        assert method == "POST"
+        assert purpose == "microsoft_subscription"
+        assert payload is not None
+        captured["state"] = payload["clientState"]
+        return {"id": SUBSCRIPTION, "expirationDateTime": FUTURE}
+
+    def message(url: str, access_token: str, **kwargs: object) -> dict:
+        del url, kwargs
+        assert access_token == TOKEN
+        return _outlook("The invoice is ready.")
+
+    monkeypatch.setattr("app.integrations.microsoft.post_form", tokens)
+    monkeypatch.setattr("app.integrations.microsoft.get_json", profile)
+    monkeypatch.setattr("app.integrations.microsoft_push._graph", graph)
+    monkeypatch.setattr("app.integrations.microsoft_push.get_json", message)
+    logging.getLogger("app.integrations.microsoft").disabled = False
+    logging.getLogger("app.integrations.microsoft_push").disabled = False
+    logging.getLogger("app.api.channels").disabled = False
+    with _env(), caplog.at_level(logging.INFO):
+        started = api_client.get(
+            "/api/integrations/microsoft/connect",
+            params={"business_id": str(business.id)},
+            follow_redirects=False,
+        )
+        state = started.headers["location"].split("state=")[1].split("&")[0]
+        finished = api_client.get(
+            "/api/integrations/microsoft/callback",
+            params={"code": "auth-code", "state": state},
+            follow_redirects=False,
+        )
+        listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+        listening = api_client.post("/api/integrations/microsoft/watch", params={"business_id": str(business.id)})
+        delivered = api_client.post(
+            "/api/integrations/microsoft/webhook",
+            json=_note(SUBSCRIPTION, captured["state"]),
+        )
+        listening_listed = api_client.get("/api/integrations", params={"business_id": str(business.id)})
+    assert finished.status_code == 302
+    assert "connection=error" not in finished.headers["location"]
+    assert finished.headers["location"].endswith("connection=microsoft365")
+    outlook = next(item for item in listed.json() if item["provider"] == "microsoft365")
+    assert outlook["availability"] == "connected"
+    assert outlook["account_label"] == EMAIL
+    assert outlook["listening"] is False
+    assert outlook["realtime"] == "needs_attention"
+    row = _connection(db_session, business.id)
+    assert row.status == "connected"
+    secret = db_session.get(IntegrationCredential, row.id)
+    assert secret is not None and secret.access_token.startswith("fernet:")
+    assert TOKEN not in secret.access_token
+    assert listening.status_code == 200
+    assert delivered.status_code == 202
+    assert _count(db_session, Message, business.id) == 1
+    restored = next(item for item in listening_listed.json() if item["provider"] == "microsoft365")
+    assert restored["availability"] == "connected"
+    assert restored["listening"] is True
+    assert restored["realtime"] == "listening"
+    assert "stage=credential_storage" in caplog.text
+    assert "stage=connection_persistence" in caplog.text
+    assert "stage=subscription_creation result=failed" in caplog.text
+    assert "stage=oauth_success" in caplog.text
+    assert "auth-code" not in caplog.text
+    assert TOKEN not in caplog.text
+    assert REFRESH not in caplog.text
+    assert captured["state"] not in caplog.text
+
+
 def test_replacing_a_subscription_deletes_the_previous_one(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,

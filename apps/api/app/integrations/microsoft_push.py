@@ -17,10 +17,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.domain.enums import ConnectionStatus, IntegrationProvider
-from app.domain.errors import ProviderError
+from app.domain.errors import NotFoundError, ProviderError
 from app.integrations.connections import mark_sync, require_connected
 from app.integrations.http_client import get_json
 from app.integrations.microsoft import access_token_for, store_microsoft_message
+from app.integrations.oauth_log import log_exception, prefix
 from app.models import ChannelConnection
 
 logger = logging.getLogger(__name__)
@@ -45,15 +46,27 @@ def prepare_microsoft_realtime(session: Session, business_id: uuid.UUID) -> None
     """
     if not _notifications_configured(get_settings()):
         logger.info(
-            "Microsoft subscription skipped category=subscription reason=not_configured business=%s",
+            "%sMicrosoft subscription skipped stage=subscription_creation result=skipped reason=not_configured business=%s",
+            prefix(),
             business_id,
         )
         return
     try:
         register_microsoft_subscription(session, business_id)
-        logger.info("Microsoft subscription created category=subscription business=%s", business_id)
-    except ProviderError:
-        logger.info("Microsoft subscription failed category=subscription business=%s", business_id)
+        logger.info(
+            "%sMicrosoft subscription created stage=subscription_creation result=created business=%s",
+            prefix(),
+            business_id,
+        )
+    except NotFoundError:
+        raise
+    except Exception as exc:
+        log_exception(logger, "subscription_creation", exc)
+        logger.warning(
+            "%sMicrosoft subscription failed stage=subscription_creation result=failed business=%s",
+            prefix(),
+            business_id,
+        )
 
 
 def register_microsoft_subscription(session: Session, business_id: uuid.UUID) -> ChannelConnection:
@@ -99,8 +112,11 @@ def register_microsoft_subscription(session: Session, business_id: uuid.UUID) ->
         return connection
     except ProviderError as exc:
         message = str(exc) if str(exc) in {_RECONNECT, _FAILURE, _NOT_CONFIGURED} else _FAILURE
-        _remember_failure(session, connection, message)
+        _remember_failure_safely(session, connection, message)
         raise ProviderError(message) from None
+    except Exception:
+        _remember_failure_safely(session, connection, _FAILURE)
+        raise ProviderError(_FAILURE) from None
 
 
 def renew_expiring_microsoft_subscriptions(session: Session, *, now: datetime | None = None) -> int:
@@ -123,8 +139,8 @@ def renew_expiring_microsoft_subscriptions(session: Session, *, now: datetime | 
         try:
             _renew_one(session, connection)
             renewed += 1
-        except ProviderError:
-            _remember_failure(session, connection, _RENEW_FAILURE)
+        except Exception:
+            _remember_failure_safely(session, connection, _RENEW_FAILURE)
             logger.info("Microsoft subscription renewal failed business=%s", connection.business_id)
     return renewed
 
@@ -415,6 +431,18 @@ def _remember_failure(session: Session, connection: ChannelConnection, message: 
         subscription_attempted=True,
         subscription_error=message,
     )
+
+
+def _remember_failure_safely(session: Session, connection: ChannelConnection, message: str) -> None:
+    try:
+        _remember_failure(session, connection, message)
+    except Exception as exc:
+        log_exception(logger, "subscription_creation", exc)
+        logger.warning(
+            "%sMicrosoft subscription failure was not recorded stage=subscription_creation business=%s",
+            prefix(),
+            connection.business_id,
+        )
 
 
 def _subscription_needs_recovery(row: ChannelConnection) -> bool:
